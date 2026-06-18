@@ -15,7 +15,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT + '/docs/official/models/cg-lib')
 from cg.game import battle_start, battle_finish, _get_battle_data
 from cg.api import (to_observation_class, all_card_data, all_attack,
-                    OptionType, SelectContext, AreaType)
+                    OptionType, SelectContext, AreaType, LogType)
 from cg.sim import lib, Battle
 
 CT = {c.cardId: c for c in all_card_data()}
@@ -48,7 +48,10 @@ def load_opp(kind):
         nb = json.load(open(ROOT + '/docs/official/models/beating-the-day-1-1-crustle-bot.ipynb'))
         src = ''.join(nb['cells'][4]['source'])
         src = src.split('\n', 1)[1] if src.startswith('%%') else src
-        deck = [344]*4+[345]*4+[1086]*4+[1147]*4+[1212]*4+[1224]*4+[1264]*4+[1159]*1+[18]*4+[11]*4+[14]*4+[6]*19
+        # Consistent test build: 8 basics (4 Dwebble + 4 Fezandipiti ex). The real
+        # meta Crustle runs only ~4 basics and bricks/loses Pokémon-less far too often
+        # to be a useful sparring opponent.
+        deck = [344]*4+[345]*4+[140]*4+[1086]*4+[1147]*4+[1212]*4+[1224]*4+[1264]*4+[1159]*1+[18]*4+[11]*4+[14]*4+[6]*15
     d = '/tmp/web_opp_' + kind; os.makedirs(d, exist_ok=True)
     open(d + '/deck.csv', 'w').write('\n'.join(map(str, deck)))
     m = types.ModuleType('opp_' + kind); m.__file__ = d + '/main.py'
@@ -57,13 +60,95 @@ def load_opp(kind):
 
 
 # ── game session (single global game; single-threaded server) ────────────────
-GAME = {'obs_dict': None, 'opp_mod': None, 'opp_deck': None, 'human': 0, 'over': True}
+GAME = {'obs_dict': None, 'opp_mod': None, 'opp_deck': None, 'human': 0, 'over': True, 'log': [], 'logseq': 0}
+
+AREA = {AreaType.DECK: 'deck', AreaType.HAND: 'hand', AreaType.DISCARD: 'discard',
+        AreaType.ACTIVE: 'active', AreaType.BENCH: 'bench', AreaType.PRIZE: 'prize'}
+AREATC = {AreaType.DECK: '牌庫', AreaType.HAND: '手牌', AreaType.DISCARD: '棄牌區',
+          AreaType.ACTIVE: '主戰區', AreaType.BENCH: '備戰區', AreaType.PRIZE: '獎賞區'}
+
+
+def decode_log(e):
+    """Turn one raw engine log event into a display entry {txt, side, from, to, reveal}."""
+    t = e.get('type'); pi = e.get('playerIndex'); cid = e.get('cardId')
+    side = 'me' if pi == GAME['human'] else ('opp' if pi is not None else '')
+    who = '你' if side == 'me' else ('電腦' if side == 'opp' else '')
+    nm = cname(cid).replace("Ethan's ", "").replace("Iono's ", "") if cid else ''
+    d = {'side': side, 'type': int(t) if t is not None else -1}
+    fa, ta = e.get('fromArea'), e.get('toArea')
+    if t in (LogType.DRAW, LogType.DRAW_REVERSE):
+        d.update(txt=f'{who} 抽牌' + (f'(看到 {nm})' if cid and side == 'me' else ''), frm='deck', to='hand')
+    elif t == LogType.TURN_START:
+        d.update(txt=f'──── {who} 回合 ────', hd=True)
+    elif t == LogType.TURN_END:
+        d.update(txt=f'{who} 結束回合')
+    elif t == LogType.SHUFFLE:
+        d.update(txt=f'{who} 洗牌')
+    elif t == LogType.PLAY:
+        d.update(txt=f'{who} 使用 {nm}', frm='hand', reveal=cid)
+    elif t == LogType.ATTACH:
+        d.update(txt=f'{who} 貼上 {nm}', frm='hand', to='active', reveal=cid)
+    elif t == LogType.EVOLVE:
+        d.update(txt=f'{who} 進化 → {nm}', reveal=cid)
+    elif t == LogType.DEVOLVE:
+        d.update(txt=f'{who} 退化 {nm}')
+    elif t == LogType.MOVE_CARD:
+        d.update(txt=f'{who} {nm} {AREATC.get(fa, "?")}→{AREATC.get(ta, "?")}',
+                 frm=AREA.get(fa), to=AREA.get(ta), reveal=(cid if ta == AreaType.DISCARD else None))
+    elif t in (LogType.SWITCH, LogType.CHANGE):
+        d.update(txt=f'{who} 替換寶可夢')
+    elif t == LogType.ATTACK:
+        a = AT.get(e.get('attackId')); d.update(txt=f'⚔ {who} 使用招式 {a.name if a else ""}', reveal=cid)
+    elif t == LogType.HP_CHANGE:
+        v = e.get('value', 0)
+        d.update(txt=f'  {nm} HP {"+" if v > 0 else ""}{v}' + ('(放指示物)' if e.get('putDamageCounter') else ''))
+    elif t in (LogType.POISONED, LogType.BURNED, LogType.ASLEEP, LogType.PARALYZED, LogType.CONFUSED):
+        st = {LogType.POISONED: '中毒', LogType.BURNED: '灼傷', LogType.ASLEEP: '睡眠',
+              LogType.PARALYZED: '麻痺', LogType.CONFUSED: '混亂'}[t]
+        d.update(txt=f'  {nm} {"解除" if e.get("isRecover") else ""}{st}')
+    elif t == LogType.COIN:
+        d.update(txt=f'🪙 擲幣:{"正面" if e.get("head") else "反面"}')
+    elif t == LogType.RESULT:
+        d.update(txt='🏁 對局結束')
+    else:
+        return None   # skip noise (HAS_BASIC_POKEMON, reverse-moves, etc.)
+    return d
+
+
+def _note_action(obs_dict, indices):
+    """The engine logs an ability's EFFECTS (draws, moves) but not the ability itself.
+    Inject a synthetic entry naming the Ability being used, so the draws that follow
+    are attributable (e.g. '✨ 你 使用特性「Dudunsparce」' before the draw lines)."""
+    try:
+        obs = to_observation_class(obs_dict)
+        if obs.select is None or not indices:
+            return
+        opt = obs.select.option[indices[0]]
+        if opt.type != OptionType.ABILITY:
+            return
+        pi = obs.current.yourIndex
+        side = 'me' if pi == GAME['human'] else 'opp'
+        who = '你' if side == 'me' else '電腦'
+        c = qmod.get_card(obs, opt.area, opt.index, pi)
+        nm = cname(c.id).replace("Ethan's ", "").replace("Iono's ", "") if c else '?'
+        GAME['log'].append({'side': side, 'type': 90, 'txt': f'✨ {who} 使用特性「{nm}」',
+                            'reveal': (c.id if c else None), 'seq': GAME['logseq']})
+        GAME['logseq'] += 1
+    except Exception:
+        pass
 
 
 def _select(indices):
     arg = (ctypes.c_int * len(indices))(*indices)
     lib.Select(Battle.battle_ptr, arg, len(indices))
-    return _get_battle_data()
+    obs = _get_battle_data()
+    for e in (obs.get('logs') or []):
+        d = decode_log(e)
+        if d:
+            d['seq'] = GAME['logseq']; GAME['logseq'] += 1
+            GAME['log'].append(d)
+    GAME['log'] = GAME['log'][-200:]
+    return obs
 
 
 def _advance_opponent():
@@ -80,6 +165,7 @@ def _advance_opponent():
             action = g['opp_mod'].agent(g['obs_dict'])
         except Exception:
             n = len(obs.select.option); action = list(range(min(max(0, obs.select.minCount), n)))
+        _note_action(g['obs_dict'], action)
         g['obs_dict'] = _select(action)
 
 
@@ -124,7 +210,9 @@ def label_option(obs, opt, my_index):
     if t == OptionType.NO:
         return '✘ NO' + (' (後攻 go second)' if obs.select.context == SelectContext.IS_FIRST else '')
     if t == OptionType.NUMBER:
-        return f'數字 {opt.number}'
+        cc = getattr(obs.select, 'contextCard', None)
+        ctx = f' ({cname(cc.id)})' if cc is not None and getattr(cc, 'id', None) else ''
+        return f'選擇數量 {opt.number}{ctx}'
     if t == OptionType.ATTACK:
         a = AT.get(opt.attackId)
         return f'⚔ 攻擊 {a.name} ({a.damage})' if a else f'⚔ Attack #{opt.attackId}'
@@ -136,12 +224,31 @@ def label_option(obs, opt, my_index):
     if t == OptionType.EVOLVE:
         c = qmod.get_card(obs, AreaType.HAND, opt.index, my_index)
         return f'⬆ 進化 → {cname(c.id) if c else ""}'
+    cn = CTX.get(obs.select.context, '') or ''   # context name, e.g. 'DISCARD_ENERGY'
     if t in (OptionType.ENERGY, OptionType.ATTACH):
         tgt = qmod.get_card(obs, opt.inPlayArea, opt.inPlayIndex, my_index)
-        return f'🔋 貼能量 → {cname(tgt.id).replace(chr(39),"") if tgt else "?"}'
+        tn = cname(tgt.id).replace(chr(39), '') if tgt else '?'
+        if 'DISCARD' in cn:
+            return f'🗑 丟棄能量（從 {tn}）'
+        if 'TO_HAND' in cn:
+            return f'✋ 拿回能量（{tn}）'
+        return f'🔋 貼能量 → {tn}'
     if t in (OptionType.PLAY, OptionType.CARD, OptionType.TOOL_CARD, OptionType.ENERGY_CARD):
         c = qmod.get_card(obs, getattr(opt, 'area', None) or AreaType.HAND, opt.index, my_index)
-        return f'▶ {cname(c.id) if c else "card"}'
+        nm = cname(c.id) if c else 'card'
+        if t == OptionType.PLAY:
+            return f'▶ 使用 {nm}'
+        if 'DISCARD' in cn:
+            return f'🗑 丟棄 {nm}'
+        if 'TO_HAND' in cn:
+            return f'🔍 取得 {nm}'
+        if 'TO_DECK' in cn or 'TO_PRIZE' in cn:
+            return f'↩ 放回 {nm}'
+        if 'SWITCH' in cn or 'ACTIVE' in cn:
+            return f'⬆ 選為主戰 {nm}'
+        if 'BENCH' in cn or 'FIELD' in cn:
+            return f'➕ 放到備戰區 {nm}'
+        return f'▶ {nm}'
     return f'option(type={t})'
 
 
@@ -160,13 +267,16 @@ def state_json(msg=''):
                    '平手' if over else ''),
         'turn': st.turn, 'context': CTX.get(obs.select.context, str(obs.select.context)) if obs.select else None,
         'yourTurn': (obs.select is not None and st.yourIndex == g['human']),
+        'log': g['log'][-90:],
         'me': {'active': poke_json(me.active[0] if me.active else None),
                'bench': [poke_json(b) for b in me.bench if b is not None],
-               'prizes': len(me.prize), 'hand': [cname(c.id) for c in (me.hand or [])],
-               'deck': me.deckCount},
+               'prizes': len(me.prize),
+               'hand': [{'id': c.id, 'name': cname(c.id)} for c in (me.hand or [])],
+               'deck': me.deckCount, 'discard': len(me.discard or [])},
         'opp': {'active': poke_json(op.active[0] if op.active else None),
                 'bench': [poke_json(b) for b in op.bench if b is not None],
-                'prizes': len(op.prize), 'handCount': op.handCount, 'deck': op.deckCount},
+                'prizes': len(op.prize), 'handCount': op.handCount, 'deck': op.deckCount,
+                'discard': len(op.discard or [])},
         'stadium': cname(st.stadium[0].id) if st.stadium else None,
         'options': [], 'ai_pick': [],
     }
@@ -208,12 +318,15 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(ROOT + '/web/index.html', 'rb').read(), 'text/html; charset=utf-8')
         if u.path == '/card_db.json':
             return self._send(200, open(ROOT + '/web/card_db.json', 'rb').read(), 'application/json; charset=utf-8')
+        if u.path == '/card_images.json':
+            return self._send(200, open(ROOT + '/web/card_images.json', 'rb').read(), 'application/json; charset=utf-8')
         if u.path == '/new':
             q = parse_qs(u.query)
             opp = q.get('opp', ['crustle'])[0]
             m, deck = load_opp(opp)
             GAME['opp_mod'], GAME['opp_deck'] = m, deck
             GAME['human'] = 0
+            GAME['log'] = []; GAME['logseq'] = 0
             GAME['obs_dict'], _ = battle_start(QDECK, deck)
             GAME['over'] = False
             _advance_opponent()
@@ -229,6 +342,7 @@ class H(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(ln) or '{}')
             idx = body.get('indices', [])
             try:
+                _note_action(GAME['obs_dict'], idx)
                 GAME['obs_dict'] = _select(idx)
                 _advance_opponent()
                 return self._send(200, json.dumps(state_json()))

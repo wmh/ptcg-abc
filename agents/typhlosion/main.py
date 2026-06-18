@@ -489,29 +489,26 @@ class QuilavaPolicy:
         if active is None or opp is None:
             return 800
         aid = o.attackId
-        # Ember (Cyndaquil) discards our own Energy — never do it (we run only ~8 energy).
-        if aid == EMBER:
-            return -1
-        # Don't waste a turn chipping with an un-evolved body if a Typhlosion is benched
-        # and (nearly) ready — better to develop / promote it. Only suppress if it can't KO.
-        if active.id in (C.CYNDAQUIL, C.QUILAVA):
-            dmg = self._typhlosion_damage(aid, opp)
-            if opp.hp > dmg:  # not a KO
-                for p in self.me.bench:
-                    if p is not None and p.id == C.TYPHLOSION:
-                        return -1
-            score = 900 + min(dmg, 120)
-            if opp.hp <= dmg:
-                score += 2000 + prize_count(opp) * 200
-            return score
         if active.id == C.DUDUNSPARCE and aid not in (BUDDY_BLAST, STEAM_ARTILLERY):
             dmg = 90
         else:
             dmg = self._typhlosion_damage(aid, opp)
+        ko = opp.hp <= dmg
+        # A damaging attack is ALWAYS better than ending the turn (free value), so it
+        # must score above END (=0). Developing / promoting Typhlosion already outrank
+        # attacking (play/evolve ~18000+, retreat 6000), so those still happen first;
+        # attacking is the fallback we take instead of wasting the turn.
+        if aid == EMBER:
+            # Ember discards our own Energy (it would otherwise carry up through evolution),
+            # so only worth it when it actually KOs; otherwise DON'T attack — keep the energy.
+            return (2500 + prize_count(opp) * 200) if ko else -1
         if dmg <= 0:
             return 400
-        score = 1000 + min(dmg, 320)
-        if opp.hp <= dmg:
+        if active.id in (C.CYNDAQUIL, C.QUILAVA):
+            score = 700 + min(dmg, 120)        # chip with an un-evolved body: low, but > END
+        else:
+            score = 1000 + min(dmg, 320)
+        if ko:
             score += 2500 + prize_count(opp) * 200
         return score
 
@@ -594,15 +591,35 @@ class QuilavaPolicy:
         if card is None:
             return 0
         cid = card.id
-        score = 200 - self.hand[cid] * 50
-        if cid == C.CYNDAQUIL:
-            score += 40 if self.field[C.TYPHLOSION] + self.field[C.QUILAVA] + self.field[C.CYNDAQUIL] < 2 else -10
+        f, h = self.field, self.hand
+        score = 200 - h[cid] * 50            # don't fetch duplicates already in hand
+
+        dun_play  = f[C.DUNSPARCE]            # Dunsparce in play (can evolve -> Dudunsparce)
+        engine_on = f[C.DUDUNSPARCE] >= 1
+        atk_base  = f[C.CYNDAQUIL] + f[C.QUILAVA]   # an attacker Basic/mid in play
+        atk_on    = f[C.TYPHLOSION] >= 1
+
+        # Fetch the piece that advances what we've actually started, in priority order:
+        #  1) complete an in-progress evolution (have the Basic -> get its next stage)
+        #  2) start the draw engine if we lack it (土龍 first for early dig)
+        #  3) start an attacker if none is online/coming
+        need_dudun     = dun_play >= 1 and (f[C.DUDUNSPARCE] + h[C.DUDUNSPARCE]) < dun_play
+        need_dunsparce = not engine_on and (dun_play + h[C.DUNSPARCE]) < 1
+        need_typh      = atk_base >= 1 and not atk_on and h[C.TYPHLOSION] < 1   # Rare Candy / evolve target
+        need_cynda     = not atk_on and (atk_base + h[C.CYNDAQUIL]) < 1
+
+        if cid == C.DUDUNSPARCE:
+            score += 130 if need_dudun else (-20 if engine_on else 10)
         elif cid == C.TYPHLOSION:
-            score += 60 if self.field[C.CYNDAQUIL] + self.field[C.QUILAVA] >= 1 else 10
+            score += 120 if need_typh else (40 if not atk_on else -10)
+        elif cid == C.DUNSPARCE:
+            score += 90 if need_dunsparce else -20
+        elif cid == C.CYNDAQUIL:
+            score += 70 if need_cynda else -10
+        elif cid == C.QUILAVA:
+            score += 30 if (f[C.CYNDAQUIL] >= 1 and not atk_on and h[C.TYPHLOSION] < 1) else -10
         elif cid == C.ETHAN_ADVENTURE:
             score += 40
-        elif cid == C.DUNSPARCE:
-            score += 25 if self.field[C.DUDUNSPARCE] + self.field[C.DUNSPARCE] < 1 else -10
         elif is_energy(cid):
             score += 30
         return score

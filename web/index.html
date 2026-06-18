@@ -5,127 +5,388 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PTCG 策略對戰沙盒</title>
 <style>
-  body{font-family:system-ui,"Microsoft JhengHei",sans-serif;margin:0;background:#10131a;color:#e8eaf0;}
-  header{display:flex;gap:12px;align-items:center;padding:10px 16px;background:#1a1f2b;position:sticky;top:0;z-index:5;flex-wrap:wrap}
-  button{cursor:pointer;border:0;border-radius:8px;padding:8px 12px;font-size:14px;background:#2b3346;color:#e8eaf0}
-  button:hover{background:#3a4258}
-  select{padding:7px;border-radius:8px;background:#2b3346;color:#e8eaf0;border:0}
-  #wrap{max-width:1100px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1fr 360px;gap:16px}
-  .mat{background:#161b26;border-radius:12px;padding:14px}
-  .side h3{margin:6px 0;font-size:13px;color:#9aa3b8;text-transform:uppercase;letter-spacing:.5px}
-  .row{display:flex;gap:8px;flex-wrap:wrap;min-height:8px;margin-bottom:10px}
-  .poke{background:#222a3a;border-radius:10px;padding:8px 10px;min-width:96px}
-  .poke.active{border:2px solid #ffc64b}
-  .poke .nm{font-weight:600;font-size:14px}
-  .poke .meta{font-size:12px;color:#9aa3b8;margin-top:3px}
-  .hpbar{height:5px;background:#3a2030;border-radius:3px;margin-top:5px;overflow:hidden}
-  .hpbar > i{display:block;height:100%;background:#5ad17a}
-  .pill{display:inline-block;background:#2b3346;border-radius:20px;padding:2px 9px;font-size:12px;margin-right:6px}
-  .opp .pill{background:#3a2330}
-  #panel h3{margin:4px 0 10px;font-size:15px}
-  .opt{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:left;margin-bottom:6px;background:#222a3a}
-  .opt.rec{background:#234d2e;border:1px solid #5ad17a}
-  .opt .sc{font-size:12px;color:#9aa3b8;font-variant-numeric:tabular-nums}
-  .opt.sel{outline:2px solid #ffc64b}
-  .tag{font-size:11px;background:#5ad17a;color:#06210f;border-radius:6px;padding:1px 6px;margin-left:6px}
-  .hint{font-size:12px;color:#8a93a8;margin:6px 0}
-  .result{font-size:20px;font-weight:700;text-align:center;padding:14px;background:#222a3a;border-radius:10px;margin-bottom:10px}
-  .hand{font-size:12px;color:#c7cde0}
-  .turnbadge{font-size:12px;padding:3px 8px;border-radius:6px}
-  .me-turn{background:#234d2e}.opp-turn{background:#3a2330}
+:root{
+  --grass:#78c850;--fire:#f08030;--water:#6890f0;--lightning:#f8d030;--psychic:#f85888;
+  --fighting:#c03028;--darkness:#705848;--metal:#b8b8d0;--dragon:#7038f8;--fairy:#ee99ac;--colorless:#a8a878;
+  --bg-dark:#0f1923;--bg-mid:#1a2735;--bg-card:#232f3e;
+  --accent:#4fc3f7;--accent2:#ff6b6b;--gold:#ffd700;
+  --text:#e8eef3;--text-dim:#9fb0bd;--border:#2d3e50;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,"Microsoft JhengHei",sans-serif;font-size:16px;
+  background:linear-gradient(160deg,var(--bg-dark),#0a0e14);color:var(--text);min-height:100vh}
+header{display:flex;gap:14px;align-items:center;padding:14px 22px;border-bottom:2px solid var(--accent);
+  background:linear-gradient(90deg,rgba(79,195,247,.12),rgba(255,215,0,.06));position:sticky;top:0;z-index:20;flex-wrap:wrap}
+header .title{font-weight:800;font-size:20px;background:linear-gradient(90deg,var(--accent),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hint{font-size:14px;color:var(--text-dim)}
+.btn{cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:9px 16px;font-size:15px;background:var(--bg-card);color:var(--text);transition:.15s}
+.btn:hover{background:var(--accent);color:#000;border-color:var(--accent);transform:translateY(-1px)}
+select{padding:9px 12px;border-radius:8px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);font-size:15px}
+#wrap{display:grid;grid-template-columns:1fr 400px;gap:18px;padding:18px;max-width:1340px;margin:0 auto}
+@media(max-width:1000px){#wrap{grid-template-columns:1fr}}
+
+.board{display:flex;flex-direction:column;gap:12px}
+.player-zone{border-radius:16px;padding:16px;border:1px solid var(--border);background:var(--bg-mid);transition:.3s}
+.player-zone.opponent{border-top:3px solid rgba(240,128,48,.4)}
+.player-zone.me{border-bottom:3px solid rgba(79,195,247,.4)}
+.player-zone.active-turn{border-color:var(--accent2);box-shadow:0 0 26px rgba(255,107,107,.12)}
+.player-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.player-name{display:flex;align-items:center;gap:8px;font-weight:700;font-size:17px}
+.player-name .dot{width:11px;height:11px;border-radius:50%;background:var(--accent)}
+.opponent .player-name .dot{background:var(--fire)}
+.turn-indicator{font-size:13px;background:var(--accent2);color:#fff;padding:3px 10px;border-radius:10px;display:none}
+.active-turn .turn-indicator{display:inline-block}
+.zone-stats{display:flex;gap:10px;font-size:14px;color:var(--text-dim);flex-wrap:wrap}
+.zone-stat{display:flex;align-items:center;gap:5px;background:rgba(0,0,0,.3);padding:5px 12px;border-radius:6px}
+.zone-stat .val{font-weight:700;color:var(--text);font-size:15px}
+.prize-dots{display:inline-flex;gap:3px;margin-left:5px}
+.prize-dots i{width:11px;height:11px;border-radius:2px;background:var(--gold);display:inline-block}
+.prize-dots i.taken{background:rgba(255,255,255,.13)}
+
+/* real-board layout: actives meet in the centre, benches on the outer edge */
+.field{display:flex;flex-direction:column;align-items:center;gap:10px}
+.row-label{font-size:12px;color:var(--text-dim);letter-spacing:1px;font-weight:700;align-self:flex-start}
+.active-row{display:flex;justify-content:center;min-height:60px}
+.bench-row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;min-height:56px}
+
+.card{position:relative;width:150px;background:var(--bg-card);border:2px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:.15s}
+.card:hover{transform:translateY(-3px);border-color:var(--accent)}
+.card.active{border-color:var(--gold);box-shadow:0 0 14px rgba(255,215,0,.2)}
+.card.small{width:118px}
+.card-type-bar{height:7px;width:100%}
+.card-body{padding:8px 10px}
+.card-name{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.small .card-name{font-size:13px}
+.card-row{display:flex;justify-content:space-between;align-items:center;margin-top:3px}
+.hp-text{font-size:14px;font-weight:700}
+.hp-text .max{color:var(--text-dim);font-weight:400}
+.ex-badge{background:var(--gold);color:#000;border-radius:4px;padding:0 5px;font-weight:800;font-size:11px}
+.hp-bar{height:6px;background:rgba(0,0,0,.4);border-radius:3px;overflow:hidden;margin:5px 0 3px}
+.hp-bar-fill{height:100%;border-radius:3px}
+.hp-bar-fill.high{background:linear-gradient(90deg,#4caf50,#66bb6a)}
+.hp-bar-fill.mid{background:linear-gradient(90deg,#ff9800,#ffa726)}
+.hp-bar-fill.low{background:linear-gradient(90deg,#f44336,#ef5350)}
+.energy-row{font-size:14px;color:var(--text-dim)}
+.empty-slot{width:118px;height:60px;border:1px dashed var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:13px}
+
+/* card-image layer (loaded from public CDN at runtime; falls back to text card) */
+.card.imgc{aspect-ratio:5/7}                 /* real TCG card ratio (63×88mm) */
+.card.imgc.noimg{aspect-ratio:auto}          /* text fallback shrinks to content */
+/* the text card stays visible as a placeholder; the image overlays it once loaded
+   (transparent until then, so a slow/failed image never shows a blank card) */
+.cimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;background:transparent}
+.card.imgc.noimg .cimg,.card.imgc.noimg .ovl{display:none}
+.ovl{position:absolute;left:0;right:0;bottom:0;z-index:2;padding:5px 7px;
+  background:linear-gradient(transparent,rgba(0,0,0,.55),rgba(0,0,0,.9));border-radius:0 0 8px 8px}
+.ovl .nm{font-size:13px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.small .ovl .nm{font-size:11px}
+.ovl .meta{display:flex;justify-content:space-between;font-size:13px;color:#fff;margin-top:2px}
+
+.center-area{display:flex;justify-content:center;align-items:center;gap:16px;padding:6px}
+.stadium-card{font-size:14px;padding:7px 16px;border-radius:8px;border:1px solid var(--border);background:rgba(0,0,0,.25);color:var(--text-dim)}
+.turn-badge{font-size:15px;font-weight:700;padding:5px 16px;border-radius:20px;background:rgba(79,195,247,.15);border:1px solid var(--accent)}
+.hand-strip{margin-top:14px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;border-top:1px solid var(--border);padding-top:12px}
+.hand-card{position:relative;width:64px;aspect-ratio:5/7;border-radius:5px;overflow:hidden;cursor:pointer;border:1px solid var(--border);background:var(--bg-card);transition:.12s}
+.hand-card:hover{transform:translateY(-5px);border-color:var(--accent);z-index:3}
+.hand-card img{width:100%;height:100%;object-fit:cover;display:block}
+.hand-card .hc-nm{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;font-size:9px;padding:2px;color:var(--text);line-height:1.15}
+.hand-card.noimg img{display:none}
+.hand-card.noimg .hc-nm{display:flex}
+
+.sidepanel{background:var(--bg-mid);border:1px solid var(--border);border-radius:16px;padding:18px;align-self:start;position:sticky;top:84px}
+.result{font-size:22px;font-weight:800;text-align:center;padding:16px;background:var(--bg-card);border-radius:10px;margin-bottom:12px}
+.ctx{font-size:18px;font-weight:700;margin:4px 0 10px}
+.aihint{font-size:15px;background:rgba(79,195,247,.1);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;margin-bottom:12px;line-height:1.5}
+.opt{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:left;margin-bottom:7px;
+  background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:11px 13px;cursor:pointer;transition:.12s;font-size:15.5px}
+.opt:hover{border-color:var(--accent)}
+.opt.rec{background:rgba(90,209,122,.14);border-color:#5ad17a}
+.opt.sel{outline:2px solid var(--gold)}
+.opt .sc{font-size:14px;color:var(--text-dim);font-variant-numeric:tabular-nums;font-weight:700}
+.tag{font-size:11px;background:#5ad17a;color:#06210f;border-radius:5px;padding:2px 7px;margin-left:6px;font-weight:700}
+.barwrap{flex:1;margin:0 8px;height:6px;background:rgba(0,0,0,.4);border-radius:3px;overflow:hidden;min-width:30px}
+.barwrap i{display:block;height:100%;background:var(--accent)}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;z-index:50}
+.modal-overlay.show{display:flex}
+.card-detail{background:var(--bg-mid);border:1px solid var(--accent);border-radius:14px;max-width:460px;width:92%;max-height:84vh;overflow:auto;padding:20px;display:flex;gap:16px;flex-direction:column}
+.detail-top{display:flex;gap:14px}
+.detail-top img{width:150px;border-radius:8px;flex:0 0 auto}
+.detail-row{display:flex;justify-content:space-between;font-size:15px;padding:5px 0;border-bottom:1px solid var(--border)}
+.detail-row .label{color:var(--text-dim)}
+.atk{background:rgba(0,0,0,.25);border-radius:8px;padding:10px 12px;margin-top:8px}
+.atk .nm{font-weight:700;font-size:15px;display:flex;justify-content:space-between;gap:8px}
+.atk .tx{font-size:14px;color:var(--text-dim);margin-top:4px;line-height:1.45}
+.type-badge{font-size:13px;font-weight:700;padding:3px 10px;border-radius:6px;color:#000}
+
+/* deck/discard pile anchors */
+.piles{display:flex;gap:8px}
+.pile{font-size:12px;color:var(--text-dim);background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:6px;padding:4px 9px;text-align:center;line-height:1.2}
+.pile b{display:block;font-size:15px;color:var(--text)}
+
+/* event log panel (like the official visualizer) */
+.logpanel{margin-top:14px;border-top:1px solid var(--border);padding-top:10px}
+.logpanel h4{margin:0 0 6px;font-size:14px;color:var(--text-dim);letter-spacing:1px}
+.logbox{max-height:300px;overflow:auto;display:flex;flex-direction:column;gap:2px;font-size:13px}
+.log-entry{padding:3px 8px;border-radius:5px;line-height:1.35}
+.log-entry.me{background:rgba(79,195,247,.10)}
+.log-entry.opp{background:rgba(240,128,48,.10)}
+.log-entry.hd{font-weight:800;text-align:center;background:rgba(255,215,0,.12);color:var(--gold);margin:3px 0}
+
+/* fly animation (card moving between zones) */
+.fly{position:fixed;width:56px;aspect-ratio:5/7;z-index:60;border-radius:5px;overflow:hidden;
+  background:var(--bg-card);border:1px solid var(--accent);box-shadow:0 6px 20px rgba(0,0,0,.5);
+  pointer-events:none;transition:left .6s ease,top .6s ease,opacity .6s ease,transform .6s ease}
+.fly img{width:100%;height:100%;object-fit:cover}
+.fly .fl{font-size:10px;color:#fff;text-align:center;padding-top:6px}
+
+/* card-reveal overlay (when a card is used / evolved / attacks) */
+.reveal{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%) scale(.6);z-index:65;
+  width:180px;aspect-ratio:5/7;border-radius:12px;overflow:hidden;box-shadow:0 10px 50px rgba(0,0,0,.7);
+  border:2px solid var(--gold);opacity:0;transition:all .35s cubic-bezier(.2,1.4,.4,1);pointer-events:none}
+.reveal.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.reveal img{width:100%;height:100%;object-fit:cover}
+.reveal .rl{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.8);color:#fff;text-align:center;padding:5px;font-weight:700;font-size:14px}
 </style>
 </head>
 <body>
 <header>
-  <strong>🃏 PTCG 策略對戰沙盒</strong>
-  <span class="hint">你操控 <b>Ethan's Typhlosion</b>;面板顯示 AI 對每步的建議與分數</span>
+  <span class="title">🃏 PTCG 策略對戰沙盒</span>
+  <span class="hint">你操控 <b>Ethan's Typhlosion</b>;右側顯示 AI 對每步的建議與分數。點卡片看詳情。</span>
   <span style="flex:1"></span>
-  對手:
-  <select id="opp"><option value="crustle">Crustle 岩殿居蟹</option><option value="lucario">Mega Lucario 格鬥</option></select>
-  <button onclick="newGame()">🔄 新對局</button>
+  <span class="hint">對手</span>
+  <select id="opp"><option value="crustle">🪨 Crustle 岩殿居蟹</option><option value="lucario">🥊 Mega Lucario 格鬥</option></select>
+  <button class="btn" onclick="newGame()">🔄 新對局</button>
 </header>
+
 <div id="wrap">
-  <div class="mat">
-    <div class="side opp">
-      <h3>對手 <span id="oppInfo"></span></h3>
-      <div class="row" id="oppActive"></div>
-      <div class="row" id="oppBench"></div>
+  <div class="board">
+    <div class="player-zone opponent" id="oppZone">
+      <div class="player-header">
+        <div class="player-name"><span class="dot"></span><span id="oppName">電腦</span><span class="turn-indicator">行動中</span></div>
+        <div class="zone-stats" id="oppStats"></div>
+        <div class="piles"><div class="pile" id="opp-deck">牌庫<b>–</b></div><div class="pile" id="opp-discard">棄牌<b>–</b></div></div>
+      </div>
+      <div class="field">
+        <div class="row-label">備戰區 BENCH</div>
+        <div class="bench-row" id="oppBench"></div>
+        <div class="row-label">主戰區 ACTIVE</div>
+        <div class="active-row" id="oppActive"></div>
+      </div>
     </div>
-    <hr style="border-color:#2b3346;margin:14px 0">
-    <div id="stadium" class="hint"></div>
-    <div class="side me">
-      <h3>你 <span id="meInfo"></span></h3>
-      <div class="row" id="meActive"></div>
-      <div class="row" id="meBench"></div>
-      <div class="hand" id="hand"></div>
+    <div class="center-area">
+      <div class="stadium-card" id="stadium">無場地</div>
+      <div class="turn-badge" id="turnBadge">回合 –</div>
+    </div>
+    <div class="player-zone me" id="meZone">
+      <div class="player-header">
+        <div class="player-name"><span class="dot"></span><span id="meName">你</span><span class="turn-indicator">行動中</span></div>
+        <div class="zone-stats" id="meStats"></div>
+        <div class="piles"><div class="pile" id="me-deck">牌庫<b>–</b></div><div class="pile" id="me-discard">棄牌<b>–</b></div></div>
+      </div>
+      <div class="field">
+        <div class="row-label">主戰區 ACTIVE</div>
+        <div class="active-row" id="meActive"></div>
+        <div class="row-label">備戰區 BENCH</div>
+        <div class="bench-row" id="meBench"></div>
+      </div>
+      <div class="hand-strip" id="hand"></div>
     </div>
   </div>
-  <div class="mat" id="panel">
-    <div id="result"></div>
-    <div id="turn"></div>
-    <h3 id="ctx">按「新對局」開始</h3>
-    <div id="aihint" class="hint"></div>
+
+  <div class="sidepanel">
+    <div class="result" id="result" style="display:none"></div>
+    <div class="ctx" id="ctx">按「新對局」開始</div>
+    <div class="aihint" id="aihint" style="display:none"></div>
     <div id="options"></div>
-    <button id="confirm" style="display:none;margin-top:8px;background:#ffc64b;color:#10131a;font-weight:700" onclick="confirmMulti()">確定送出</button>
+    <button class="btn" id="confirm" style="display:none;width:100%;margin-top:8px;background:var(--gold);color:#000;font-weight:700;font-size:16px" onclick="confirmMulti()">確定送出</button>
+    <div class="logpanel"><h4>📜 對戰紀錄 LOG</h4><div class="logbox" id="logbox"></div></div>
   </div>
 </div>
+<div class="reveal" id="reveal"></div>
+
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="card-detail" id="modalBody"></div>
+</div>
+
 <script>
-let STATE=null, SEL=[], MULTI=false;
+let STATE=null, SEL=[], MULTI=false, DB={}, IMG={}, LASTSEQ=-1;
 const $=s=>document.querySelector(s);
-function pokeHTML(p,active){
-  if(!p) return '';
-  const pct=Math.max(0,Math.round(100*p.hp/(p.maxHp||p.hp||1)));
-  const tools=p.tools&&p.tools.length?` 🛡${p.tools.length}`:'';
-  return `<div class="poke ${active?'active':''}"><div class="nm">${p.name}</div>
-    <div class="meta">HP ${p.hp}/${p.maxHp} · 🔋${p.energy}${tools}</div>
-    <div class="hpbar"><i style="width:${pct}%"></i></div></div>`;
+const TYPES={GRASS:'--grass',FIRE:'--fire',WATER:'--water',LIGHTNING:'--lightning',PSYCHIC:'--psychic',
+  FIGHTING:'--fighting',DARKNESS:'--darkness',METAL:'--metal',DRAGON:'--dragon',FAIRY:'--fairy',COLORLESS:'--colorless'};
+const TC={GRASS:'草',FIRE:'火',WATER:'水',LIGHTNING:'雷',PSYCHIC:'超',FIGHTING:'鬥',DARKNESS:'惡',METAL:'鋼',DRAGON:'龍',FAIRY:'妖',COLORLESS:'無'};
+const tColor=t=>`var(${TYPES[t]||'--colorless'})`;
+const short=n=>(n||'').replace("Ethan's ","").replace("Iono's ","");
+const imgURL=id=>IMG[id]?`https://images.pokemontcg.io/${IMG[id]}.png`:null;
+
+function cardHTML(p,active){
+  if(!p) return active?'<div class="empty-slot">—</div>':'';
+  const d=DB[p.id]||{}; const c=tColor(d.type);
+  const pct=Math.max(0,Math.min(100,Math.round(100*p.hp/(p.maxHp||p.hp||1))));
+  const cls=pct>50?'high':pct>20?'mid':'low';
+  const ex=d.ex?'<span class="ex-badge">ex</span>':'';
+  const tools=(p.tools&&p.tools.length)?` 🛡${p.tools.length}`:'';
+  const body=`<div class="card-type-bar" style="background:${c}"></div>
+    <div class="card-body">
+      <div class="card-name">${short(p.name)} ${ex}</div>
+      <div class="hp-bar"><div class="hp-bar-fill ${cls}" style="width:${pct}%"></div></div>
+      <div class="card-row"><span class="hp-text">${p.hp}<span class="max">/${p.maxHp}</span></span>
+        <span class="energy-row">🔋${p.energy}${tools}</span></div>
+    </div>`;
+  const url=imgURL(p.id);
+  const imgLayer = url ? `<img class="cimg" src="${url}" onerror="this.closest('.card').classList.add('noimg')">
+    <div class="ovl"><div class="nm">${short(p.name)} ${ex}</div>
+      <div class="hp-bar"><div class="hp-bar-fill ${cls}" style="width:${pct}%"></div></div>
+      <div class="meta"><span>${p.hp}/${p.maxHp}</span><span>🔋${p.energy}${tools}</span></div></div>` : '';
+  return `<div class="card ${active?'active small':'small'} ${url?'imgc':''}" data-id="${p.id}"
+    data-hp="${p.hp}" data-mhp="${p.maxHp}" data-e="${p.energy}" data-tools="${(p.tools||[]).join('、')}"
+    onclick="detailLive(this)">${body}${imgLayer}</div>`;
+}
+function handHTML(c){
+  const url=imgURL(c.id);
+  const nm=`<div class="hc-nm">${short(c.name)}</div>`;
+  if(url) return `<div class="hand-card" onclick="detail(${c.id})"><img src="${url}" onerror="this.closest('.hand-card').classList.add('noimg')">${nm}</div>`;
+  return `<div class="hand-card noimg" onclick="detail(${c.id})">${nm}</div>`;
+}
+function statHTML(o,isOpp){
+  const taken=6-o.prizes; let dots='<span class="prize-dots">';
+  for(let i=0;i<6;i++) dots+=`<i class="${i<taken?'taken':''}"></i>`;
+  dots+='</span>';
+  const hand=isOpp?o.handCount:(o.hand?o.hand.length:0);
+  return `<div class="zone-stat">獎賞${dots}</div>
+    <div class="zone-stat">✋ 手牌 <span class="val">${hand}</span></div>
+    <div class="zone-stat">📚 牌庫 <span class="val">${o.deck}</span></div>`;
 }
 function render(s){
   STATE=s; SEL=[];
   if(!s.started){ $('#ctx').textContent='按「新對局」開始'; return; }
-  $('#oppActive').innerHTML=pokeHTML(s.opp.active,true);
-  $('#oppBench').innerHTML=(s.opp.bench||[]).map(p=>pokeHTML(p)).join('');
-  $('#oppInfo').innerHTML=`<span class="pill">獎賞 ${s.opp.prizes}</span><span class="pill">手牌 ${s.opp.handCount}</span><span class="pill">牌庫 ${s.opp.deck}</span>`;
-  $('#meActive').innerHTML=pokeHTML(s.me.active,true);
-  $('#meBench').innerHTML=(s.me.bench||[]).map(p=>pokeHTML(p)).join('');
-  $('#meInfo').innerHTML=`<span class="pill">獎賞 ${s.me.prizes}</span><span class="pill">牌庫 ${s.me.deck}</span>`;
-  $('#hand').innerHTML='手牌: '+(s.me.hand||[]).map(n=>n.replace("Ethan's ","").replace("Iono's ","")).join(' · ');
-  $('#stadium').textContent=s.stadium?('場地: '+s.stadium):'';
+  $('#oppActive').innerHTML=cardHTML(s.opp.active,true);
+  $('#oppBench').innerHTML=(s.opp.bench||[]).map(p=>cardHTML(p)).join('')||'<div class="empty-slot">空</div>';
+  $('#oppStats').innerHTML=statHTML(s.opp,true);
+  $('#meActive').innerHTML=cardHTML(s.me.active,true);
+  $('#meBench').innerHTML=(s.me.bench||[]).map(p=>cardHTML(p)).join('')||'<div class="empty-slot">空</div>';
+  $('#meStats').innerHTML=statHTML(s.me,false);
+  $('#hand').innerHTML=(s.me.hand||[]).map(handHTML).join('');
+  $('#stadium').textContent=s.stadium?('🏟 '+s.stadium):'無場地';
+  $('#turnBadge').textContent='回合 '+(s.turn??'–');
+  $('#oppZone').classList.toggle('active-turn', !s.over && !s.yourTurn);
+  $('#meZone').classList.toggle('active-turn', !s.over && s.yourTurn);
+  setPile('me',s.me); setPile('opp',s.opp);
+  processLog(s.log||[]);
   $('#result').textContent=s.result||''; $('#result').style.display=s.result?'block':'none';
-  $('#turn').innerHTML = s.over?'' : (s.yourTurn?'<span class="turnbadge me-turn">你的回合</span>':'<span class="turnbadge opp-turn">電腦思考中…</span>');
-  $('#ctx').textContent = s.over?'對局結束':(s.context?('決策: '+s.context):'');
-  const optDiv=$('#options'); optDiv.innerHTML='';
-  $('#confirm').style.display='none';
-  if(s.over || !s.yourTurn){ $('#aihint').textContent=''; return; }
+  $('#ctx').textContent = s.over?'對局結束':(s.yourTurn?('你的回合 · '+(s.context||'')):'電腦思考中…');
+  const optDiv=$('#options'); optDiv.innerHTML=''; $('#confirm').style.display='none';
+  if(s.over || !s.yourTurn){ $('#aihint').style.display='none'; return; }
   MULTI = s.multi && s.multi.max>1;
   const recs=(s.options||[]).filter(o=>o.recommended).map(o=>o.label).join(' + ');
-  $('#aihint').innerHTML = `🤖 <b>AI 建議:</b> ${recs||'(無)'} ${MULTI?`<br>(多選 ${s.multi.min}~${s.multi.max} 項,選好按確定)`:''}`;
+  $('#aihint').style.display='block';
+  $('#aihint').innerHTML=`🤖 <b>AI 建議:</b> ${recs||'(無)'}${MULTI?`<br><span class="hint">多選 ${s.multi.min}~${s.multi.max} 項,選好按確定</span>`:''}`;
+  const mx=Math.max(1,...(s.options||[]).map(o=>o.score||0));
   (s.options||[]).forEach(o=>{
-    const b=document.createElement('button');
+    const b=document.createElement('div');
     b.className='opt'+(o.recommended?' rec':'');
-    b.innerHTML=`<span>${o.label}${o.recommended?'<span class="tag">AI建議</span>':''}</span><span class="sc">${o.score}</span>`;
+    const pct=Math.max(0,Math.round(100*(o.score||0)/mx));
+    b.innerHTML=`<span>${o.label}${o.recommended?'<span class="tag">AI</span>':''}</span>
+      <span class="barwrap"><i style="width:${pct}%"></i></span><span class="sc">${o.score}</span>`;
     b.onclick=()=>pick(o.i,b);
     optDiv.appendChild(b);
   });
   if(MULTI) $('#confirm').style.display='block';
 }
 function pick(i,btn){
-  if(MULTI){
-    const k=SEL.indexOf(i);
-    if(k>=0){SEL.splice(k,1);btn.classList.remove('sel');}
-    else{SEL.push(i);btn.classList.add('sel');}
-  }else{ send([i]); }
+  if(MULTI){ const k=SEL.indexOf(i);
+    if(k>=0){SEL.splice(k,1);btn.classList.remove('sel');} else {SEL.push(i);btn.classList.add('sel');}
+  } else send([i]);
 }
 function confirmMulti(){ send(SEL.slice()); }
+function detailLive(el){
+  detail(+el.dataset.id, {hp:el.dataset.hp, mhp:el.dataset.mhp, e:el.dataset.e, tools:el.dataset.tools});
+}
+function detail(id, live){
+  const d=DB[id]; if(!d) return;
+  const url=imgURL(id);
+  let h=`<div class="detail-top">${url?`<img src="${url}" onerror="this.style.display='none'">`:''}<div style="flex:1">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <h2 style="margin:0;font-size:20px">${d.name_tc||d.name}</h2>
+      <span class="type-badge" style="background:${tColor(d.type)}">${TC[d.type]||d.type||''}</span></div>
+    <div class="hint" style="margin:3px 0">${d.name}</div>`;
+  if(d.hp) h+=`<div class="detail-row"><span class="label">HP</span><span>${d.hp}</span></div>`;
+  if(d.weak) h+=`<div class="detail-row"><span class="label">弱點</span><span>${TC[d.weak]||d.weak}</span></div>`;
+  if(d.stage!=null) h+=`<div class="detail-row"><span class="label">階段</span><span>${d.ex?'ex ':''}${['基礎','一階','二階'][d.stage]??d.stage}</span></div>`;
+  h+='</div></div>';
+  if(live) h+=`<div class="atk" style="border:1px solid var(--gold)"><div class="nm">📍 場上現況</div>
+    <div class="tx">HP ${live.hp}/${live.mhp}　·　🔋 已附能量 ${live.e} 個　·　🛡 道具:${live.tools||'無'}</div></div>`;
+  (d.abilities||[]).forEach(a=>h+=`<div class="atk"><div class="nm">✨ 特性</div><div class="tx">${a}</div></div>`);
+  (d.attacks||[]).forEach(a=>{
+    const cost=(a.cost||[]).map(c=>TC[c]||c[0]).join('');
+    h+=`<div class="atk"><div class="nm"><span>⚔ ${a.name} <span class="hint">[${cost}]</span></span><span>${a.dmg||''}</span></div>
+      ${a.text?`<div class="tx">${a.text}</div>`:''}</div>`;
+  });
+  $('#modalBody').innerHTML=h; $('#modal').classList.add('show');
+}
+function setPile(side,o){
+  const dk=document.querySelector(`#${side}-deck b`), ds=document.querySelector(`#${side}-discard b`);
+  if(dk) dk.textContent=o.deck; if(ds) ds.textContent=(o.discard!=null?o.discard:'–');
+}
+function anchorEl(side,name){
+  if(name==='hand') return side==='me'?$('#hand'):$('#oppStats');
+  if(name==='active') return side==='me'?$('#meActive'):$('#oppActive');
+  if(name==='bench'||name==='field') return side==='me'?$('#meBench'):$('#oppBench');
+  return document.getElementById(`${side}-${name}`);   // deck / discard piles
+}
+function flyCard(side,frm,to,cardId){
+  const a=anchorEl(side,frm), b=anchorEl(side,to);
+  if(!a||!b) return;
+  const ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
+  if(!ra.width||!rb.width) return;
+  const el=document.createElement('div'); el.className='fly';
+  const url=imgURL(cardId);
+  el.innerHTML=url?`<img src="${url}">`:`<div class="fl">🂠</div>`;
+  el.style.left=(ra.left+ra.width/2-28)+'px'; el.style.top=(ra.top+ra.height/2-39)+'px';
+  document.body.appendChild(el);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    el.style.left=(rb.left+rb.width/2-28)+'px'; el.style.top=(rb.top+rb.height/2-39)+'px';
+    el.style.opacity='.25'; el.style.transform='scale(.5)';
+  }));
+  setTimeout(()=>el.remove(),650);
+}
+function showReveal(cardId,label){
+  const url=imgURL(cardId); if(!url) return;   // only reveal cards we have art for
+  const r=$('#reveal');
+  r.innerHTML=`<img src="${url}"><div class="rl">${label}</div>`;
+  r.classList.add('show');
+  clearTimeout(showReveal._t); showReveal._t=setTimeout(()=>r.classList.remove('show'),1100);
+}
+function logLine(e){
+  const div=document.createElement('div');
+  div.className='log-entry '+(e.hd?'hd':(e.side||''));
+  div.textContent=e.txt;
+  return div;
+}
+function animateEntry(e){
+  if(e.frm && e.to) flyCard(e.side,e.frm,e.to,e.reveal);
+  else if(e.frm==='hand') flyCard(e.side,'hand','discard',e.reveal);
+  else if(e.frm) flyCard(e.side,e.frm,'discard',e.reveal);
+  if(e.reveal) showReveal(e.reveal,e.txt);
+}
+function processLog(log){
+  const box=$('#logbox'); box.innerHTML='';
+  log.forEach(e=>box.appendChild(logLine(e)));
+  box.scrollTop=box.scrollHeight;
+  const fresh=log.filter(e=>e.seq>LASTSEQ);
+  if(log.length) LASTSEQ=Math.max(LASTSEQ,...log.map(e=>e.seq||0));
+  fresh.slice(-12).forEach((e,k)=>setTimeout(()=>animateEntry(e), k*130));   // stagger, cap burst
+}
 async function send(indices){
   const r=await fetch('/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({indices})});
   render(await r.json());
 }
-async function newGame(){
-  const opp=$('#opp').value;
-  const r=await fetch('/new?opp='+opp); render(await r.json());
-}
-newGame();
+async function newGame(){ LASTSEQ=-1; $('#logbox').innerHTML=''; const r=await fetch('/new?opp='+$('#opp').value); render(await r.json()); }
+(async()=>{
+  DB=await (await fetch('/card_db.json')).json();
+  try{ IMG=await (await fetch('/card_images.json')).json(); }catch(e){ IMG={}; }
+  newGame();
+})();
 </script>
 </body>
 </html>
