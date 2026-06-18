@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PTCG 策略對戰沙盒</title>
+<style>
+  body{font-family:system-ui,"Microsoft JhengHei",sans-serif;margin:0;background:#10131a;color:#e8eaf0;}
+  header{display:flex;gap:12px;align-items:center;padding:10px 16px;background:#1a1f2b;position:sticky;top:0;z-index:5;flex-wrap:wrap}
+  button{cursor:pointer;border:0;border-radius:8px;padding:8px 12px;font-size:14px;background:#2b3346;color:#e8eaf0}
+  button:hover{background:#3a4258}
+  select{padding:7px;border-radius:8px;background:#2b3346;color:#e8eaf0;border:0}
+  #wrap{max-width:1100px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1fr 360px;gap:16px}
+  .mat{background:#161b26;border-radius:12px;padding:14px}
+  .side h3{margin:6px 0;font-size:13px;color:#9aa3b8;text-transform:uppercase;letter-spacing:.5px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;min-height:8px;margin-bottom:10px}
+  .poke{background:#222a3a;border-radius:10px;padding:8px 10px;min-width:96px}
+  .poke.active{border:2px solid #ffc64b}
+  .poke .nm{font-weight:600;font-size:14px}
+  .poke .meta{font-size:12px;color:#9aa3b8;margin-top:3px}
+  .hpbar{height:5px;background:#3a2030;border-radius:3px;margin-top:5px;overflow:hidden}
+  .hpbar > i{display:block;height:100%;background:#5ad17a}
+  .pill{display:inline-block;background:#2b3346;border-radius:20px;padding:2px 9px;font-size:12px;margin-right:6px}
+  .opp .pill{background:#3a2330}
+  #panel h3{margin:4px 0 10px;font-size:15px}
+  .opt{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:left;margin-bottom:6px;background:#222a3a}
+  .opt.rec{background:#234d2e;border:1px solid #5ad17a}
+  .opt .sc{font-size:12px;color:#9aa3b8;font-variant-numeric:tabular-nums}
+  .opt.sel{outline:2px solid #ffc64b}
+  .tag{font-size:11px;background:#5ad17a;color:#06210f;border-radius:6px;padding:1px 6px;margin-left:6px}
+  .hint{font-size:12px;color:#8a93a8;margin:6px 0}
+  .result{font-size:20px;font-weight:700;text-align:center;padding:14px;background:#222a3a;border-radius:10px;margin-bottom:10px}
+  .hand{font-size:12px;color:#c7cde0}
+  .turnbadge{font-size:12px;padding:3px 8px;border-radius:6px}
+  .me-turn{background:#234d2e}.opp-turn{background:#3a2330}
+</style>
+</head>
+<body>
+<header>
+  <strong>🃏 PTCG 策略對戰沙盒</strong>
+  <span class="hint">你操控 <b>Ethan's Typhlosion</b>;面板顯示 AI 對每步的建議與分數</span>
+  <span style="flex:1"></span>
+  對手:
+  <select id="opp"><option value="crustle">Crustle 岩殿居蟹</option><option value="lucario">Mega Lucario 格鬥</option></select>
+  <button onclick="newGame()">🔄 新對局</button>
+</header>
+<div id="wrap">
+  <div class="mat">
+    <div class="side opp">
+      <h3>對手 <span id="oppInfo"></span></h3>
+      <div class="row" id="oppActive"></div>
+      <div class="row" id="oppBench"></div>
+    </div>
+    <hr style="border-color:#2b3346;margin:14px 0">
+    <div id="stadium" class="hint"></div>
+    <div class="side me">
+      <h3>你 <span id="meInfo"></span></h3>
+      <div class="row" id="meActive"></div>
+      <div class="row" id="meBench"></div>
+      <div class="hand" id="hand"></div>
+    </div>
+  </div>
+  <div class="mat" id="panel">
+    <div id="result"></div>
+    <div id="turn"></div>
+    <h3 id="ctx">按「新對局」開始</h3>
+    <div id="aihint" class="hint"></div>
+    <div id="options"></div>
+    <button id="confirm" style="display:none;margin-top:8px;background:#ffc64b;color:#10131a;font-weight:700" onclick="confirmMulti()">確定送出</button>
+  </div>
+</div>
+<script>
+let STATE=null, SEL=[], MULTI=false;
+const $=s=>document.querySelector(s);
+function pokeHTML(p,active){
+  if(!p) return '';
+  const pct=Math.max(0,Math.round(100*p.hp/(p.maxHp||p.hp||1)));
+  const tools=p.tools&&p.tools.length?` 🛡${p.tools.length}`:'';
+  return `<div class="poke ${active?'active':''}"><div class="nm">${p.name}</div>
+    <div class="meta">HP ${p.hp}/${p.maxHp} · 🔋${p.energy}${tools}</div>
+    <div class="hpbar"><i style="width:${pct}%"></i></div></div>`;
+}
+function render(s){
+  STATE=s; SEL=[];
+  if(!s.started){ $('#ctx').textContent='按「新對局」開始'; return; }
+  $('#oppActive').innerHTML=pokeHTML(s.opp.active,true);
+  $('#oppBench').innerHTML=(s.opp.bench||[]).map(p=>pokeHTML(p)).join('');
+  $('#oppInfo').innerHTML=`<span class="pill">獎賞 ${s.opp.prizes}</span><span class="pill">手牌 ${s.opp.handCount}</span><span class="pill">牌庫 ${s.opp.deck}</span>`;
+  $('#meActive').innerHTML=pokeHTML(s.me.active,true);
+  $('#meBench').innerHTML=(s.me.bench||[]).map(p=>pokeHTML(p)).join('');
+  $('#meInfo').innerHTML=`<span class="pill">獎賞 ${s.me.prizes}</span><span class="pill">牌庫 ${s.me.deck}</span>`;
+  $('#hand').innerHTML='手牌: '+(s.me.hand||[]).map(n=>n.replace("Ethan's ","").replace("Iono's ","")).join(' · ');
+  $('#stadium').textContent=s.stadium?('場地: '+s.stadium):'';
+  $('#result').textContent=s.result||''; $('#result').style.display=s.result?'block':'none';
+  $('#turn').innerHTML = s.over?'' : (s.yourTurn?'<span class="turnbadge me-turn">你的回合</span>':'<span class="turnbadge opp-turn">電腦思考中…</span>');
+  $('#ctx').textContent = s.over?'對局結束':(s.context?('決策: '+s.context):'');
+  const optDiv=$('#options'); optDiv.innerHTML='';
+  $('#confirm').style.display='none';
+  if(s.over || !s.yourTurn){ $('#aihint').textContent=''; return; }
+  MULTI = s.multi && s.multi.max>1;
+  const recs=(s.options||[]).filter(o=>o.recommended).map(o=>o.label).join(' + ');
+  $('#aihint').innerHTML = `🤖 <b>AI 建議:</b> ${recs||'(無)'} ${MULTI?`<br>(多選 ${s.multi.min}~${s.multi.max} 項,選好按確定)`:''}`;
+  (s.options||[]).forEach(o=>{
+    const b=document.createElement('button');
+    b.className='opt'+(o.recommended?' rec':'');
+    b.innerHTML=`<span>${o.label}${o.recommended?'<span class="tag">AI建議</span>':''}</span><span class="sc">${o.score}</span>`;
+    b.onclick=()=>pick(o.i,b);
+    optDiv.appendChild(b);
+  });
+  if(MULTI) $('#confirm').style.display='block';
+}
+function pick(i,btn){
+  if(MULTI){
+    const k=SEL.indexOf(i);
+    if(k>=0){SEL.splice(k,1);btn.classList.remove('sel');}
+    else{SEL.push(i);btn.classList.add('sel');}
+  }else{ send([i]); }
+}
+function confirmMulti(){ send(SEL.slice()); }
+async function send(indices){
+  const r=await fetch('/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({indices})});
+  render(await r.json());
+}
+async function newGame(){
+  const opp=$('#opp').value;
+  const r=await fetch('/new?opp='+opp); render(await r.json());
+}
+newGame();
+</script>
+</body>
+</html>

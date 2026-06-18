@@ -1,0 +1,27 @@
+# ── Secrets / private (NEVER upload) ───────────────────────────
+.kaggle/
+.kaggle2/
+private/
+**/kaggle.json
+**/credentials.json
+**/*api*key*
+**/*.token
+
+# ── Official competition materials (available on the Kaggle site) ─
+docs/official/
+
+# ── Local engine copied into agents for testing (official, large) ─
+**/cg/
+agents/**/cg/
+
+# ── Build artifacts / environments / caches ────────────────────
+venv/
+**/submission.tar.gz
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+/tmp/
+
+# Private multi-account tooling
+tools/kaggle-as.sh
