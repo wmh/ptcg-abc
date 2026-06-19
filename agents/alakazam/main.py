@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from cg.api import (
     AreaType, Card, CardType, EnergyType, Observation, OptionType, Pokemon,
-    SelectContext, all_card_data, to_observation_class,
+    SelectContext, all_card_data, all_attack, to_observation_class,
 )
 
 
@@ -125,6 +125,41 @@ for _c in all_card:
             elif 'to this Pokémon' in _t or 'to this Pok' in _t:
                 EFFECT_PREVENT_SELF.add(_c.cardId)
 
+# GENERAL energy rule: attach only what an attack costs — never over-fill — UNLESS the attack
+# scales with energy attached to ITSELF (then more = more damage). Disruption (energy removal)
+# is handled automatically: it drops the count back below the need, so we just refill.
+ATTACK_COST = {}                 # attackId -> number of energies in its cost
+ATTACK_COST_ENERGIES = {}        # attackId -> list of required EnergyType (0=Colorless, 5=Psychic…)
+SELF_SCALING_ATTACKS = set()     # attacks whose damage grows with energy on the attacker
+for _a in all_attack():
+    ATTACK_COST[_a.attackId] = len(_a.energies or [])
+    ATTACK_COST_ENERGIES[_a.attackId] = list(_a.energies or [])
+    _t = (_a.text or '').lower()
+    if 'for each' in _t and 'energy attached to this' in _t:
+        SELF_SCALING_ATTACKS.add(_a.attackId)
+
+# What TYPE each energy card provides (Enriching -> Colorless 0; Telepath/Basic {P} -> Psychic 5).
+# Critical: attaching energy must satisfy the attack's TYPE requirement, not just its count.
+ENERGY_PROVIDES = {}
+for _c in all_card:
+    if _c.cardType in (CardType.BASIC_ENERGY, CardType.SPECIAL_ENERGY):
+        ENERGY_PROVIDES[_c.cardId] = getattr(_c, 'energyType', 0)
+
+# Situational-tech triggers (only bench the tech when the opponent's board warrants it):
+#   Shaymin (Flower Curtain) matters ONLY vs bench-damage (spread/snipe) attacks;
+#   Psyduck (Damp) matters ONLY vs abilities that require KO-ing the user itself.
+BENCH_DAMAGE_ATTACKS = set()
+for _a in all_attack():
+    _t = (_a.text or '').lower()
+    if ('benched' in _t and 'damage' in _t) or ('to each of your opponent' in _t and 'damage' in _t):
+        BENCH_DAMAGE_ATTACKS.add(_a.attackId)
+SELF_KO_ABILITY_IDS = set()
+for _c in all_card:
+    for _s in (_c.skills or []):
+        _t = (_s.text or '').lower()
+        if 'knock out' in _t and ('this pokémon' in _t or 'this pokemon' in _t or 'itself' in _t):
+            SELF_KO_ABILITY_IDS.add(_c.cardId)
+
 
 # ── generic helpers (proven scaffolding) ─────────────────────────────────────
 def normalize_selection(ranked, scores, select):
@@ -227,27 +262,111 @@ class AlakazamPolicy:
     def _low_deck(self):
         return self.me.deckCount <= LOW_DECK_COUNT
 
+    def _deck_preserve(self):
+        """Don't mill ourselves out of a WINNING game (real-ladder bug: we filtered our
+        deck to 0 while ahead enough to close). If we already have a powered attacker and a
+        hand big enough to keep KO-ing (Powerful Hand = 20×hand), we don't NEED more cards —
+        and once the deck is down to about the number of prizes we still have to take, every
+        extra optional draw/filter risks decking out before the last prize. So: stop optional
+        drawing and just attack ~1 KO per turn, keeping enough deck to draw 1/turn to the end."""
+        if not self._have_attacker():
+            return False
+        opp = self.opponent.active[0] if self.opponent.active else None
+        if opp is None:
+            return False
+        remaining_prizes = len(self.me.prize)                 # ≈ turns we still need
+        big_hand = 20 * self.me.handCount >= max(opp.hp, 130)  # can essentially KO a body now
+        deck_low = self.me.deckCount <= remaining_prizes + 4   # keep a draw-1/turn buffer
+        return big_hand and deck_low
+
     def _hand_size(self):
         return self.me.handCount
 
     def _energy_count(self, p):
         return len(p.energies) if p is not None else 0
 
+    @staticmethod
+    def _can_pay(attached, cost):
+        """Can `attached` (list of EnergyType) pay `cost` (list of EnergyType, 0=Colorless)?
+        Specific-type requirements must be met by that exact type; Colorless by anything left."""
+        from collections import Counter
+        have = Counter(attached)
+        colorless = 0
+        for req in cost:
+            if req == EnergyType.COLORLESS:
+                colorless += 1
+            elif have.get(req, 0) > 0:
+                have[req] -= 1
+            else:
+                return False            # e.g. a Psychic requirement with only Colorless attached
+        return sum(have.values()) >= colorless
+
+    def _can_attack(self, p):
+        """TYPE-AWARE: can p actually pay one of its attacks with its currently attached
+        energy? (1 Enriching = Colorless does NOT pay Powerful Hand's Psychic cost.)"""
+        c = card_table.get(p.id)
+        if c is None:
+            return False
+        attached = list(p.energies or [])
+        return any(aid in ATTACK_COST_ENERGIES and self._can_pay(attached, ATTACK_COST_ENERGIES[aid])
+                   for aid in (c.attacks or []))
+
+    def _should_fuel(self, p):
+        """Attach more energy ONLY while p still can't pay an attack (type-aware), so we never
+        over-fill — UNLESS an attack scales with its own energy (then keep attaching)."""
+        c = card_table.get(p.id)
+        if c is None or not (c.attacks or []):
+            return False
+        if any(aid in SELF_SCALING_ATTACKS for aid in c.attacks):
+            return True
+        return not self._can_attack(p)
+
+    def _attach_helps(self, p, src):
+        """Would attaching energy `src` actually let p pay an attack it currently can't?
+        (A Colorless Enriching onto a Psychic-needing Alakazam does NOT help -> don't waste it.)"""
+        if src is None:
+            return True
+        prov = ENERGY_PROVIDES.get(src.id)
+        if prov is None:
+            return True
+        new = list(p.energies or []) + [prov]
+        c = card_table.get(p.id)
+        return any(aid in ATTACK_COST_ENERGIES and self._can_pay(new, ATTACK_COST_ENERGIES[aid])
+                   for aid in (c.attacks or []))
+
+    def _opp_threatens_bench(self):
+        """Opponent has a bench-damaging (spread/snipe) attacker in play -> Shaymin matters."""
+        for p in (self.opponent.active + self.opponent.bench):
+            c = card_table.get(p.id) if p is not None else None
+            if c and any(aid in BENCH_DAMAGE_ATTACKS for aid in (c.attacks or [])):
+                return True
+        return False
+
+    def _opp_has_self_ko_ability(self):
+        """Opponent has an ability that KOs the user itself -> Psyduck (Damp) matters."""
+        return any(p is not None and p.id in SELF_KO_ABILITY_IDS
+                   for p in (self.opponent.active + self.opponent.bench))
+
     def _energy_in_hand(self):
         return any(is_energy(c.id) for c in self.me.hand)
 
+    def _psychic_in_hand(self):
+        """A {P}-providing energy in hand (the ONLY kind that fuels our attacks — Enriching's
+        Colorless does not). 'Energy in hand' that is just Enriching still leaves us starved."""
+        return any(ENERGY_PROVIDES.get(c.id) == EnergyType.PSYCHIC for c in self.me.hand)
+
     def _energy_starved(self):
         """We have an Alakazam-line attacker in play (or a Kadabra + Alakazam in hand to
-        evolve) that has NO energy, and no energy in hand to fuel it. With only 6 energy in
-        60 cards, energy is the bottleneck — searches should grab an energy over more bodies."""
+        evolve) that CAN'T attack, and no usable {P} energy in hand to fix it. With only 6
+        energy in 60 cards, energy is the bottleneck — searches should grab a {P} energy."""
         bodies = [p for p in (self.me.active + self.me.bench) if p is not None]
         has_alakazam = any(p.id in ALAKAZAM_IDS for p in bodies)
         coming = any(p.id == C.KADABRA for p in bodies) and self.hand[C.ALAKAZAM] > 0
         if not (has_alakazam or coming):
             return False
-        if any(p.id in ALAKAZAM_IDS and self._energy_count(p) >= 1 for p in bodies):
-            return False                       # already have a powered attacker
-        return not self._energy_in_hand()
+        if any(p.id in ALAKAZAM_IDS and self._can_attack(p) for p in bodies):
+            return False                       # already have an attacker that can actually attack
+        return not self._psychic_in_hand()
 
     def _effect_prevented(self, target):
         """True if attack EFFECTS done to `target` are prevented (Mist Energy / Rock
@@ -417,17 +536,22 @@ class AlakazamPolicy:
             if self.me.deckCount <= 7:        # hard deck-out floor
                 return -1
             if o.area != AreaType.BENCH:
-                # ACTIVE copy: normally avoid (it forces a promote). BUT do it to escape
-                # an Item-lock, OR to CYCLE this weak active out and promote a ready
-                # benched attacker — then we attack the same turn. (Issue 1: a ready
-                # attacker must come up; sitting here just idle-draws us to deck-out.)
+                # ACTIVE copy: CYCLE this weak active out and promote a ready benched
+                # attacker (or escape Item-lock), then attack the same turn. This is
+                # REPOSITIONING TO ATTACK, not filtering — so it is ALWAYS allowed, even in
+                # deck-preserve mode (getting the powered Alakazam active to swing is the
+                # whole point). Bug fixed: gating this on _deck_preserve stranded a powered
+                # Alakazam on the bench (Dudunsparce active, 0 energy, can't retreat) -> no
+                # attacks -> no_offense loss.
                 if self._item_locked() or self._bench_attacker_ready():
                     return 14000
                 return -1
-            # BENCHED copy = the draw engine. Draw-engine decks WIN by drawing aggressively
-            # (big hand = big Powerful Hand, and it stocks future turns too). Deck-out
-            # guards tested here regressed cabt badly (60%→38%) — so we draw, with only the
-            # ≤7 hard floor above + the mild "hand already huge & deck low" cap below.
+            # BENCHED copy = the draw engine (pure filtering). Draw-engine decks WIN by
+            # drawing aggressively (big hand = big Powerful Hand) — blanket deck-out guards
+            # regressed cabt — so we draw, EXCEPT: when we already have a winning hand and the
+            # deck is low, stop filtering ourselves out of a won game (real-ladder bug).
+            if self._deck_preserve():
+                return -1
             if self.me.handCount >= 14 and self.me.deckCount <= 12:
                 return -1
             return 15000
@@ -452,8 +576,14 @@ class AlakazamPolicy:
         if cid == C.DUNSPARCE:
             return 18500 - 250 * n
         if cid == C.SHAYMIN:
-            return 17000 if n == 0 else -1
-        if cid in (C.PSYDUCK, C.GENESECT):
+            # Flower Curtain protects the bench from attack damage -> bench it ONLY vs a
+            # bench-damage (spread/snipe) opponent; otherwise it just clogs a bench slot.
+            return 17000 if (n == 0 and self._opp_threatens_bench()) else -1
+        if cid == C.PSYDUCK:
+            # Damp only locks self-KO abilities (almost nothing in this meta) -> bench it
+            # ONLY when the opponent actually has such an ability in play.
+            return 9000 if (n == 0 and self._opp_has_self_ko_ability()) else -1
+        if cid == C.GENESECT:
             return 9000 if n == 0 else -1
         return 14000 - 200 * n
 
@@ -502,6 +632,10 @@ class AlakazamPolicy:
         # Powerful Hand, DRAW toward it (a draw Supporter beats gusting a weaker target).
         draw_for_ko = (opp_active is not None and self._ko_active_reachable()
                        and 20 * self.me.handCount < opp_active.hp)
+        # Winning + deck low: stop spending the deck on draw/search supporters — preserve it
+        # so we can draw 1/turn to the finish (Boss's Orders gust is still allowed below).
+        if cid in (C.HILDA, C.DAWN, C.POKE_PAD) and self._deck_preserve():
+            return -1
         if cid == C.HILDA:
             if self.state.supporterPlayed:
                 return -1
@@ -595,14 +729,20 @@ class AlakazamPolicy:
         p = get_card(self.obs, o.inPlayArea, o.inPlayIndex, self.my_index)
         if not isinstance(p, Pokemon):
             return 0
+        # GENERAL RULE (type-aware): attach only while the body still can't pay an attack;
+        # once it CAN attack, hold the rest (fuels a backup AND +20 Powerful Hand per card).
+        if not self._should_fuel(p):
+            return -1
+        # The source energy must actually enable an attack — a Colorless Enriching onto a
+        # Psychic-needing Alakazam does NOT (the bug); hold it / pick a {P} source instead.
+        src = get_card(self.obs, AreaType.HAND, o.index, self.my_index)
+        if not self._attach_helps(p, src):
+            return -1
         if p.id in ALAKAZAM_IDS:
-            base = 8000 if self._energy_count(p) < 1 else 1200
-            if o.inPlayArea == AreaType.ACTIVE:
-                base += 200
-            return base
+            return 8000 + (200 if o.inPlayArea == AreaType.ACTIVE else 0)
         if p.id in (C.ABRA, C.KADABRA):
-            return 1500
-        return 300
+            return 1500           # pre-fuel the line (energy carries through evolution)
+        return -1                 # non-attacker -> don't waste energy, hold it
 
     # — retreat —
     def _score_retreat(self):
@@ -689,11 +829,13 @@ class AlakazamPolicy:
         return 0
 
     def _score_attach_target(self, p, is_active):
+        if not self._should_fuel(p):
+            return -1             # already CAN attack (type-aware) -> don't over-fill
         if p.id in ALAKAZAM_IDS:
-            return (8000 if self._energy_count(p) < 1 else 1200) + (200 if is_active else 0)
+            return 8000 + (200 if is_active else 0)
         if p.id in (C.ABRA, C.KADABRA):
             return 1500
-        return 300
+        return -1
 
     def _score_active_choice(self, o, card):
         if not isinstance(card, Pokemon):
@@ -750,7 +892,9 @@ class AlakazamPolicy:
         if cid == C.DUNSPARCE:
             return 180 - 30 * n
         if cid == C.SHAYMIN:
-            return 150 if n == 0 else -1
+            return 150 if (n == 0 and self._opp_threatens_bench()) else -1
+        if cid == C.PSYDUCK:
+            return 90 if (n == 0 and self._opp_has_self_ko_ability()) else -1
         return 100 - 20 * n
 
     def _score_to_hand(self, card):
@@ -767,7 +911,12 @@ class AlakazamPolicy:
         elif cid == C.DUNSPARCE:
             score += 25 if self.field[C.DUDUNSPARCE] + self.field[C.DUNSPARCE] < 1 else -10
         elif is_energy(cid):
-            score += 300 if self._energy_starved() else 30   # fuel the attacker first
+            # When starved, fetch a {P} energy (the only kind that fuels our attacks) — an
+            # Enriching (Colorless) doesn't help, so don't prioritise it.
+            if self._energy_starved() and ENERGY_PROVIDES.get(cid) == EnergyType.PSYCHIC:
+                score += 300
+            else:
+                score += 30
         return score
 
     def _score_discard(self, card):

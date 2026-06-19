@@ -130,6 +130,35 @@ def analyze_game(steps, our_idx, we_lost, our_atk_ids):
     # we got stuck / never pressured (item-locked, no energy, all attacks blocked, etc.).
     if we_lost and res['damaging_attacks'] <= 1:
         res['no_offense_loss'] = 1
+
+    # prize race: read the final remaining-prize counts (start at 6; lower = closer to win).
+    our_rem = opp_rem = 6
+    for st in reversed(steps):
+        if our_idx >= len(st):
+            continue
+        cur = (st[our_idx].get('observation') or {}).get('current') or {}
+        yi = cur.get('yourIndex'); pls = cur.get('players')
+        if yi is None or not pls or len(pls) < 2:
+            continue
+        op, pp = pls[yi].get('prize'), pls[1 - yi].get('prize')
+        if isinstance(op, list) and isinstance(pp, list):
+            our_rem, opp_rem = len(op), len(pp); break
+    res['prizes_taken'] = 6 - our_rem        # how many prizes WE took
+    res['opp_prizes_taken'] = 6 - opp_rem
+
+    # classify WHY we lost (dominant cause) -> drives what to fix
+    res['loss_class'] = None
+    if we_lost:
+        if res['deckout_loss']:
+            res['loss_class'] = 'deckout'              # milled ourselves out
+        elif res['damaging_attacks'] <= 1:
+            res['loss_class'] = 'no_offense'           # never got to attack (locked/starved)
+        elif res['prizes_taken'] <= 1:
+            res['loss_class'] = 'blown_out'            # attacked but got run over on prizes
+        elif res['prizes_taken'] >= 3:
+            res['loss_class'] = 'close_race'           # traded evenly, lost on the wire
+        else:
+            res['loss_class'] = 'traded_lost'
     return res
 
 
@@ -140,6 +169,8 @@ def run_matchup(our_cb, our_path, opp_name, games, our_atk_ids):
     oppfile = load_our_callable(our_path) if opp_name == 'mirror' else ce.prep_opponent(opp_name)
     w = [0, 0, 0]           # win / loss / draw
     agg = {'attack_no_damage': {}, 'no_offense_loss': 0, 'deckout_loss': 0, 'error_games': 0}
+    loss_classes = {}       # why we lost: deckout / no_offense / blown_out / close_race / traded_lost
+    prizes_in_losses = []   # how many prizes we took in games we lost
     examples = []
     for g in range(games):
         env = make('cabt')
@@ -161,6 +192,9 @@ def run_matchup(our_cb, our_path, opp_name, games, our_atk_ids):
             agg['attack_no_damage'][aid] = agg['attack_no_damage'].get(aid, 0) + n
         agg['no_offense_loss'] += a['no_offense_loss']
         agg['deckout_loss'] += a['deckout_loss']
+        if a.get('loss_class'):
+            loss_classes[a['loss_class']] = loss_classes.get(a['loss_class'], 0) + 1
+            prizes_in_losses.append(a['prizes_taken'])
         if (a['attack_no_damage'] or a['no_offense_loss'] or a['deckout_loss']) and len(examples) < 5:
             examples.append(g)
         print(f'  game {g+1}/{games}: us={ru} opp={ro}'
@@ -170,12 +204,15 @@ def run_matchup(our_cb, our_path, opp_name, games, our_atk_ids):
     t = w[0] + w[1]
     wr = (w[0] / t * 100) if t else 0
     nd = {attack_name(aid): n for aid, n in sorted(agg['attack_no_damage'].items(), key=lambda x: -x[1])}
+    lc = dict(sorted(loss_classes.items(), key=lambda x: -x[1]))
+    avg_prize_loss = round(sum(prizes_in_losses) / len(prizes_in_losses), 1) if prizes_in_losses else None
     out = {'opponent': opp_name, 'games': games, 'winrate': round(wr, 1),
            'W': w[0], 'L': w[1], 'attack_no_damage': nd, 'no_offense_loss': agg['no_offense_loss'],
            'deckout_loss': agg['deckout_loss'], 'error_games': agg['error_games'],
+           'loss_causes': lc, 'avg_prizes_taken_in_losses': avg_prize_loss,
            'example_games': examples}
-    print(f'[analyze] {opp_name}: {w[0]}W/{w[1]}L = {wr:.0f}% | 0dmg-attacks={nd} | '
-          f"no-offense-losses={agg['no_offense_loss']} | deckout={agg['deckout_loss']} | errors={agg['error_games']}")
+    print(f'[analyze] {opp_name}: {w[0]}W/{w[1]}L = {wr:.0f}% | loss-causes={lc} | '
+          f'avg-prizes-in-loss={avg_prize_loss}/6 | 0dmg={nd}')
     return out
 
 
@@ -195,13 +232,13 @@ def main():
     path = f'/tmp/analyze_{name}.json'
     json.dump(summary, open(path, 'w'), ensure_ascii=False, indent=2)
     print(f'\n=== PROBLEM REPORT ({agent_dir}) — saved {path} ===')
+    print(f"  {'matchup':10s} {'WR':>5s}  loss-causes (dominant first) | avg-prizes-taken-in-loss")
     for r in reports:
-        flags = []
-        if r['attack_no_damage']: flags.append(f"0dmg:{r['attack_no_damage']}")
-        if r['no_offense_loss']: flags.append(f"no-offense:{r['no_offense_loss']}")
-        if r['deckout_loss']: flags.append(f"deckout:{r['deckout_loss']}")
-        if r['error_games']: flags.append(f"errors:{r['error_games']}")
-        print(f"  {r['opponent']:10s} {r['winrate']:5.1f}%  {' '.join(flags) if flags else '(no anomalies)'}")
+        lc = ' '.join(f'{k}:{v}' for k, v in r['loss_causes'].items()) or '(no losses)'
+        print(f"  {r['opponent']:10s} {r['winrate']:4.0f}%  {lc}  | {r['avg_prizes_taken_in_losses']}/6")
+    print("\n  loss-cause legend: deckout=milled out | no_offense=never attacked (locked/"
+          "energy-starved) | blown_out=attacked but run over on prizes (≤1 prize) | "
+          "close_race=traded evenly, lost on the wire (≥3 prizes) | traded_lost=2 prizes")
 
 
 if __name__ == '__main__':
