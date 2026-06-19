@@ -102,6 +102,16 @@ if len(my_deck) != 60:
 all_card = all_card_data()
 card_table = {c.cardId: c for c in all_card}
 
+# Active-ability Item-lock cards (Tyranitar / Jellicent ex …). Some lock cards
+# (e.g. Budew) carry the effect without an exposed skill, so we ALSO detect lock
+# from game state (hold Items but none playable) — see QuilavaPolicy._item_locked.
+ITEM_LOCK_IDS = set()
+for _c in all_card:
+    for _s in (_c.skills or []):
+        _t = (_s.text or '')
+        if 'Item' in _t and 'Active Spot' in _t and 'play' in _t and ('opponent' in _t or 'neither' in _t):
+            ITEM_LOCK_IDS.add(_c.cardId)
+
 
 # ── generic helpers (proven scaffolding) ─────────────────────────────────────
 def normalize_selection(ranked, scores, select):
@@ -344,6 +354,30 @@ class QuilavaPolicy:
             return 0
         return 0
 
+    def _bench_attacker_ready(self):
+        """A benched Typhlosion that already has enough energy to attack (Buddy Blast
+        needs 2). If one exists, we want IT active, not a Dunsparce/Dudunsparce/Cyndaquil."""
+        return any(p is not None and p.id == C.TYPHLOSION and self._energy_count(p) >= 2
+                   for p in self.me.bench)
+
+    def _item_locked(self):
+        """Are we Item-locked (can't play Item cards)? Detect from a known lock
+        ability on the opponent's Active, OR from game state: we hold Item card(s)
+        but the engine offers no way to play any of them."""
+        opp = self.opponent.active[0] if self.opponent.active else None
+        if opp is not None and opp.id in ITEM_LOCK_IDS:
+            return True
+        items = [c for c in self.me.hand
+                 if card_table.get(c.id) is not None and card_table[c.id].cardType == CardType.ITEM]
+        if not items:
+            return False
+        for o in self.select.option:
+            if o.type == OptionType.PLAY:
+                c = get_card(self.obs, AreaType.HAND, o.index, self.my_index)
+                if c is not None and card_table.get(c.id) is not None and card_table[c.id].cardType == CardType.ITEM:
+                    return False   # an Item is playable → not locked
+        return True
+
     # — abilities —
     def _score_ability(self, o):
         card = get_card(self.obs, o.area, o.index, self.my_index)
@@ -360,13 +394,17 @@ class QuilavaPolicy:
             #  - only on a BENCHED copy (never shuffle away our active body → would
             #    force a fragile promote, fatal vs aggro), and
             #  - not when our deck is clearly smaller than the opponent's (deck-out risk).
-            if o.area != AreaType.BENCH:
-                return -1   # only the benched copy — never shuffle away our active body
-            # Use it (almost) every turn as the consistency engine; the only stop is a
-            # real deck-out risk = OUR deck about to empty (absolute, not "opp hoards").
-            if self.me.deckCount <= 7:        # draw-engine: keep drawing (≤8 not adopted)
+            if self.me.deckCount <= 7:        # deck-out guard (absolute)
                 return -1
-            return 11000
+            if o.area != AreaType.BENCH:
+                # ACTIVE copy: normally avoid (forces a promote). BUT do it to escape an
+                # Item-lock, OR to CYCLE this weak active out and promote a ready benched
+                # Typhlosion — then we attack the same turn. (Issue 1: a ready attacker
+                # must come up; sitting here just idle-draws us toward deck-out.)
+                if self._item_locked() or self._bench_attacker_ready():
+                    return 10500
+                return -1
+            return 11000   # benched copy: consistency engine, (almost) every turn
         if card.id == C.VICTINI:
             return -1  # passive ability, no activation needed normally
         return 9000

@@ -152,8 +152,10 @@ select{padding:9px 12px;border-radius:8px;background:var(--bg-card);color:var(--
 <body>
 <header>
   <span class="title">🃏 PTCG 策略對戰沙盒</span>
-  <span class="hint">你操控 <b>Ethan's Typhlosion</b>;右側顯示 AI 對每步的建議與分數。點卡片看詳情。</span>
+  <span class="hint">右側顯示 AI 對每步的建議與分數。點卡片看詳情。</span>
   <span style="flex:1"></span>
+  <span class="hint">你的牌組</span>
+  <select id="me"><option value="typhlosion">🔥 Ethan's Typhlosion</option><option value="bellibolt">⚡ Iono's Bellibolt</option><option value="alakazam">🔮 胡地 Alakazam</option></select>
   <span class="hint">對手</span>
   <select id="opp"><option value="crustle">🪨 Crustle 岩殿居蟹</option><option value="lucario">🥊 Mega Lucario 格鬥</option></select>
   <button class="btn" onclick="newGame()">🔄 新對局</button>
@@ -217,7 +219,7 @@ const TYPES={GRASS:'--grass',FIRE:'--fire',WATER:'--water',LIGHTNING:'--lightnin
 const TC={GRASS:'草',FIRE:'火',WATER:'水',LIGHTNING:'雷',PSYCHIC:'超',FIGHTING:'鬥',DARKNESS:'惡',METAL:'鋼',DRAGON:'龍',FAIRY:'妖',COLORLESS:'無'};
 const tColor=t=>`var(${TYPES[t]||'--colorless'})`;
 const short=n=>(n||'').replace("Ethan's ","").replace("Iono's ","");
-const imgURL=id=>IMG[id]?`https://images.pokemontcg.io/${IMG[id]}.png`:null;
+const imgURL=id=>`/card_img/${id}.png`;   // official-PDF render (covers ALL cards; 404 -> text fallback)
 
 function cardHTML(p,active){
   if(!p) return active?'<div class="empty-slot">—</div>':'';
@@ -381,7 +383,7 @@ async function send(indices){
   const r=await fetch('/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({indices})});
   render(await r.json());
 }
-async function newGame(){ LASTSEQ=-1; $('#logbox').innerHTML=''; const r=await fetch('/new?opp='+$('#opp').value); render(await r.json()); }
+async function newGame(){ LASTSEQ=-1; $('#logbox').innerHTML=''; const r=await fetch('/new?me='+$('#me').value+'&opp='+$('#opp').value); render(await r.json()); }
 (async()=>{
   DB=await (await fetch('/card_db.json')).json();
   try{ IMG=await (await fetch('/card_images.json')).json(); }catch(e){ IMG={}; }

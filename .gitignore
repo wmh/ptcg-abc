@@ -25,3 +25,9 @@ __pycache__/
 
 # Private multi-account tooling
 tools/kaggle-as.sh
+
+# Pinned opponent decks cached by tools/cabt_eval.py (machine-local test fixtures)
+tools/.opp_cache_*.csv
+
+# Card images rendered from the official PDF (copyright — local only)
+web/card_imgs/

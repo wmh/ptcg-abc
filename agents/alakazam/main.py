@@ -14,6 +14,9 @@ class C:
     ABRA = 741            # Basic -> Kadabra
     KADABRA = 742         # Stage1 (Psychic Draw on evolve) -> Alakazam
     ALAKAZAM = 743        # Stage2 attacker: Powerful Hand = 20 dmg x cards in hand
+    ALAKAZAM_PSY = 245    # Stage2 TECH (1x): Psychic = 10 + 50/energy on opp Active.
+                          # It does DAMAGE (not counters) -> bypasses Mist Energy; punishes
+                          # energy-loaded ex. Our answer to Mist decks (Dragapult/Crustle).
     DUNSPARCE = 305       # Basic -> Dudunsparce
     DUDUNSPARCE = 66      # Stage1 draw engine (Run Away Draw)
     PSYDUCK = 858         # Damp (ability lock tech)
@@ -31,6 +34,7 @@ class C:
     RARE_CANDY = 1079
     BOSS_ORDERS = 1182
     BATTLE_CAGE = 1264    # Stadium: block bench damage counters
+    ENHANCED_HAMMER = 1081  # Item: discard a Special Energy from opp (e.g. Mist Energy)
     LUCKY_HELMET = 1156   # Tool: draw 2 when damaged
     WONDROUS_PATCH = 1146
     NIGHT_STRETCHER = 1097
@@ -38,8 +42,11 @@ class C:
     LANA_AID = 1184
 
 
-POWERFUL_HAND = 1072   # Alakazam: place 2 counters (20 dmg) per card in hand, on opp Active
+POWERFUL_HAND = 1072   # Alakazam 743: place 2 counters (20 dmg) per card in hand, on opp Active
+PSYCHIC_ATK = 339      # Alakazam 245: 10 + 50 per energy on opp Active (DAMAGE; bypasses Mist)
+STRANGE_HACKING = 338  # Alakazam 245: confuse + move opp's damage counters around
 SUPER_PSY_BOLT = 1071  # Kadabra: 30
+ALAKAZAM_IDS = {743, 245}   # both Stage-2 Alakazam attackers (Powerful Hand / Psychic)
 ABRA_TELEPORT = 1070   # Abra: 10 + switch
 DUDUN_LAND_CRUSH = 76  # Dudunsparce: 90 (rarely; engine instead)
 DUNSPARCE_TRADE = 423  # Dunsparce: switch
@@ -91,6 +98,32 @@ if len(my_deck) != 60:
 
 all_card = all_card_data()
 card_table = {c.cardId: c for c in all_card}
+
+# Active-ability Item-lock cards (Tyranitar / Jellicent ex …). Some lock cards
+# (e.g. Budew) carry the effect without an exposed skill, so we ALSO detect lock
+# from game state (hold Items but none playable) — see AlakazamPolicy._item_locked.
+ITEM_LOCK_IDS = set()
+for _c in all_card:
+    for _s in (_c.skills or []):
+        _t = (_s.text or '')
+        if 'Item' in _t and 'Active Spot' in _t and 'play' in _t and ('opponent' in _t or 'neither' in _t):
+            ITEM_LOCK_IDS.add(_c.cardId)
+
+# CRITICAL for Alakazam: Powerful Hand "places damage counters" = an EFFECT, so a
+# target that "prevents all effects of attacks done to it" takes 0 from it.
+#   - special energies that grant this (Mist Energy 11, Rock Fighting Energy 20)
+#   - Pokémon/Tools whose own ability prevents effects of attacks done to itself
+EFFECT_PREVENT_ENERGY = set()
+EFFECT_PREVENT_SELF = set()
+for _c in all_card:
+    _ct = _c.cardType
+    for _s in (_c.skills or []):
+        _t = (_s.text or '')
+        if 'effects of attacks' in _t and 'prevent' in _t.lower():
+            if _ct in (CardType.SPECIAL_ENERGY, CardType.BASIC_ENERGY):
+                EFFECT_PREVENT_ENERGY.add(_c.cardId)
+            elif 'to this Pokémon' in _t or 'to this Pok' in _t:
+                EFFECT_PREVENT_SELF.add(_c.cardId)
 
 
 # ── generic helpers (proven scaffolding) ─────────────────────────────────────
@@ -200,13 +233,57 @@ class AlakazamPolicy:
     def _energy_count(self, p):
         return len(p.energies) if p is not None else 0
 
+    def _energy_in_hand(self):
+        return any(is_energy(c.id) for c in self.me.hand)
+
+    def _energy_starved(self):
+        """We have an Alakazam-line attacker in play (or a Kadabra + Alakazam in hand to
+        evolve) that has NO energy, and no energy in hand to fuel it. With only 6 energy in
+        60 cards, energy is the bottleneck — searches should grab an energy over more bodies."""
+        bodies = [p for p in (self.me.active + self.me.bench) if p is not None]
+        has_alakazam = any(p.id in ALAKAZAM_IDS for p in bodies)
+        coming = any(p.id == C.KADABRA for p in bodies) and self.hand[C.ALAKAZAM] > 0
+        if not (has_alakazam or coming):
+            return False
+        if any(p.id in ALAKAZAM_IDS and self._energy_count(p) >= 1 for p in bodies):
+            return False                       # already have a powered attacker
+        return not self._energy_in_hand()
+
+    def _effect_prevented(self, target):
+        """True if attack EFFECTS done to `target` are prevented (Mist Energy / Rock
+        Fighting Energy attached, or a self-prevention ability). Powerful Hand places
+        damage counters = an effect, so it does 0 to such a target."""
+        if target is None:
+            return False
+        if target.id in EFFECT_PREVENT_SELF:
+            return True
+        for e in (getattr(target, 'energyCards', None) or []):
+            if getattr(e, 'id', None) in EFFECT_PREVENT_ENERGY:
+                return True
+        return False
+
+    def _opp_active_has_prevent_energy(self):
+        """Opponent's Active has Mist/Rock-Fighting special energy blocking Powerful
+        Hand — Enhanced Hammer should strip it before we attack."""
+        opp = self.opponent.active[0] if self.opponent.active else None
+        if opp is None:
+            return False
+        return any(getattr(e, 'id', None) in EFFECT_PREVENT_ENERGY
+                   for e in (getattr(opp, 'energyCards', None) or []))
+
     # — damage —
     def _alakazam_damage(self, attack_id, target):
         if target is None:
             return 0
         if attack_id == POWERFUL_HAND:
+            if self._effect_prevented(target):
+                return 0                     # Mist Energy etc. negates "place counters"
             return 20 * self._hand_size()    # counter placement -> no weakness
-        if attack_id == SUPER_PSY_BOLT:
+        if attack_id == PSYCHIC_ATK:
+            # 245 Alakazam: 10 + 50 per energy on opp Active. This is DAMAGE, so it goes
+            # THROUGH Mist Energy and applies Weakness — our answer to Mist/energy decks.
+            dmg = 10 + 50 * len(target.energies)
+        elif attack_id == SUPER_PSY_BOLT:
             dmg = 30
         elif attack_id == ABRA_TELEPORT:
             dmg = 10
@@ -228,10 +305,13 @@ class AlakazamPolicy:
         a = self.me.active[0] if self.me.active else None
         if a is None or target is None:
             return 0
-        if a.id == C.ALAKAZAM and self._energy_count(a) >= 1:
-            return self._alakazam_damage(POWERFUL_HAND, target)
-        if a.id == C.KADABRA and self._energy_count(a) >= 1:
-            return self._alakazam_damage(SUPER_PSY_BOLT, target)
+        if self._energy_count(a) >= 1:
+            if a.id == C.ALAKAZAM:
+                return self._alakazam_damage(POWERFUL_HAND, target)
+            if a.id == C.ALAKAZAM_PSY:
+                return self._alakazam_damage(PSYCHIC_ATK, target)
+            if a.id == C.KADABRA:
+                return self._alakazam_damage(SUPER_PSY_BOLT, target)
         return 0
 
     def _gust_ko_targets(self):
@@ -303,19 +383,54 @@ class AlakazamPolicy:
             return 0
         return 0
 
+    def _item_locked(self):
+        """Are we Item-locked (can't play Item cards)? Detect from a known lock
+        ability on the opponent's Active, OR from game state: we hold Item card(s)
+        but the engine offers no way to play any of them."""
+        opp = self.opponent.active[0] if self.opponent.active else None
+        if opp is not None and opp.id in ITEM_LOCK_IDS:
+            return True
+        items = [c for c in self.me.hand
+                 if card_table.get(c.id) is not None and card_table[c.id].cardType == CardType.ITEM]
+        if not items:
+            return False
+        for o in self.select.option:
+            if o.type == OptionType.PLAY:
+                c = get_card(self.obs, AreaType.HAND, o.index, self.my_index)
+                if c is not None and card_table.get(c.id) is not None and card_table[c.id].cardType == CardType.ITEM:
+                    return False   # an Item is playable → not locked
+        return True
+
+    def _bench_attacker_ready(self):
+        """A benched Alakazam that already has the energy to attack (Powerful Hand
+        needs 1 {P}). If one exists, we want IT active, not a Dunsparce/Dudunsparce."""
+        return any(p is not None and p.id in ALAKAZAM_IDS and self._energy_count(p) >= 1
+                   for p in self.me.bench)
+
     # — abilities —
     def _score_ability(self, o):
         card = get_card(self.obs, o.area, o.index, self.my_index)
         if card is None:
             return 0
         if card.id == C.DUDUNSPARCE:
-            # Run Away Draw: draw 3 + recycle. Big hand = big Powerful Hand. Use it
-            # from BENCH almost every turn unless our deck is about to empty.
-            if o.area != AreaType.BENCH:
+            # Run Away Draw: draw 3 + shuffle this Pokémon back into the deck.
+            if self.me.deckCount <= 7:        # hard deck-out floor
                 return -1
-            if self.me.deckCount <= 7:        # draw-engine deck: draw aggressively
-                return -1                     # (≤8 guard tested WORSE: cabt 50→36% — its
-            return 15000                      #  win-con is a huge hand, so don't stop early)
+            if o.area != AreaType.BENCH:
+                # ACTIVE copy: normally avoid (it forces a promote). BUT do it to escape
+                # an Item-lock, OR to CYCLE this weak active out and promote a ready
+                # benched attacker — then we attack the same turn. (Issue 1: a ready
+                # attacker must come up; sitting here just idle-draws us to deck-out.)
+                if self._item_locked() or self._bench_attacker_ready():
+                    return 14000
+                return -1
+            # BENCHED copy = the draw engine. Draw-engine decks WIN by drawing aggressively
+            # (big hand = big Powerful Hand, and it stocks future turns too). Deck-out
+            # guards tested here regressed cabt badly (60%→38%) — so we draw, with only the
+            # ≤7 hard floor above + the mild "hand already huge & deck low" cap below.
+            if self.me.handCount >= 14 and self.me.deckCount <= 12:
+                return -1
+            return 15000
         return 9000
 
     # — play —
@@ -344,13 +459,36 @@ class AlakazamPolicy:
 
     def _alakazam_ready(self):
         a = self.me.active[0] if self.me.active else None
-        return a is not None and a.id == C.ALAKAZAM and self._energy_count(a) >= 1
+        return a is not None and a.id in ALAKAZAM_IDS and self._energy_count(a) >= 1
 
     def _need_pieces(self):
         return self.field[C.ALAKAZAM] < 1
 
     def _open_bench(self):
         return sum(1 for p in self.me.bench if p is not None) < getattr(self.me, "benchMax", 5)
+
+    def _achievable_hand(self):
+        """Biggest hand we can realistically reach THIS turn (Powerful Hand = 20×hand):
+        current hand + Run Away Draw (+3) + one draw/search Supporter (~+1 net)."""
+        extra = 0
+        if self.me.deckCount > 7 and any(p is not None and p.id == C.DUDUNSPARCE for p in self.me.bench):
+            extra += 3
+        if not self.state.supporterPlayed and (self.hand[C.HILDA] or self.hand[C.DAWN]):
+            extra += 1
+        return self.me.handCount + extra
+
+    def _have_attacker(self):
+        a = self.me.active[0] if self.me.active else None
+        return (a is not None and a.id in ALAKAZAM_IDS and self._energy_count(a) >= 1) or self._bench_attacker_ready()
+
+    def _ko_active_reachable(self):
+        """Can Powerful Hand KO the opponent's ACTIVE this turn — now, or after the
+        drawing still available to us? (Each turn, aim to KO the best target: usually
+        the dangerous active attacker, by pumping the hand to lethal.)"""
+        opp = self.opponent.active[0] if self.opponent.active else None
+        return (opp is not None and self._have_attacker()
+                and not self._effect_prevented(opp)        # Mist Energy etc. → 0, don't chase it
+                and 20 * self._achievable_hand() >= opp.hp)
 
     def _score_play_trainer(self, card):
         cid = card.id
@@ -359,13 +497,22 @@ class AlakazamPolicy:
             if self.field[C.ABRA] >= 1 and self.hand[C.ALAKAZAM] >= 1:
                 return 20500
             return -1
+        opp_active = self.opponent.active[0] if self.opponent.active else None
+        # Each turn, if we can KO the dangerous Active this turn by drawing up to a lethal
+        # Powerful Hand, DRAW toward it (a draw Supporter beats gusting a weaker target).
+        draw_for_ko = (opp_active is not None and self._ko_active_reachable()
+                       and 20 * self.me.handCount < opp_active.hp)
         if cid == C.HILDA:
             if self.state.supporterPlayed:
                 return -1
+            if draw_for_ko:
+                return 14000
             return 12500 if self._need_pieces() else 3000
         if cid == C.DAWN:
             if self.state.supporterPlayed:
                 return -1
+            if draw_for_ko:
+                return 13800
             return 12000 if self._need_pieces() else 2500
         if cid == C.BUDDY_POFFIN:
             return 13000 if self._open_bench() else 600
@@ -375,14 +522,31 @@ class AlakazamPolicy:
             if self.state.supporterPlayed:
                 return -1
             ko = self._gust_ko_targets()
+            # If we can KO the Active threat this turn and it's worth at least as much as
+            # any benched target, KO IT — don't gust a weaker Pokémon and leave the threat.
+            if opp_active is not None and self._ko_active_reachable():
+                best_gust = max((self._target_value(p) for p in ko), default=-1)
+                if self._target_value(opp_active) >= best_gust:
+                    return -1
             if not ko:
                 return -1
-            opp_active = self.opponent.active[0] if self.opponent.active else None
             best = max(ko, key=self._gust_value)
             if opp_active is not None and self._active_best_dmg(opp_active) >= opp_active.hp \
                     and prize_count(opp_active) >= prize_count(best):
                 return -1
             return 13500
+        if cid == C.ENHANCED_HAMMER:
+            # Strip Mist/effect-prevention Special Energy off the opponent's Active so
+            # Powerful Hand stops doing 0. Do it BEFORE drawing/attacking.
+            if self._opp_active_has_prevent_energy():
+                return 16000
+            # otherwise only worth it if the opponent has any Special Energy to remove
+            if any(card_table.get(getattr(e, 'id', None)) is not None
+                   and card_table[e.id].cardType == CardType.SPECIAL_ENERGY
+                   for p in (self.opponent.active + self.opponent.bench) if p is not None
+                   for e in (getattr(p, 'energyCards', None) or [])):
+                return 1500
+            return -1
         if cid == C.BATTLE_CAGE:
             if self.state.stadiumPlayed or self.stadium_id == C.BATTLE_CAGE:
                 return -1
@@ -408,6 +572,16 @@ class AlakazamPolicy:
             return 0
         card = get_card(self.obs, AreaType.HAND, o.index, self.my_index)
         cid = card.id if card is not None else None
+        if cid == C.ALAKAZAM_PSY:
+            # The Psychic tech (bypasses Mist, punishes energy). Make THIS Alakazam only
+            # when (a) the opp Active is Mist-protected AND we can't strip it (no Enhanced
+            # Hammer in hand), or (b) it's heavily energy-loaded. Otherwise the 743 Powerful
+            # Hand (after Enhanced Hammer if needed) is our higher-ceiling main attacker.
+            opp = self.opponent.active[0] if self.opponent.active else None
+            if opp is not None and ((self._effect_prevented(opp) and self.hand[C.ENHANCED_HAMMER] == 0)
+                                    or len(opp.energies) >= 4):
+                return 21500
+            return 20400
         if cid == C.ALAKAZAM:
             return 21000
         if cid == C.KADABRA:
@@ -421,7 +595,7 @@ class AlakazamPolicy:
         p = get_card(self.obs, o.inPlayArea, o.inPlayIndex, self.my_index)
         if not isinstance(p, Pokemon):
             return 0
-        if p.id == C.ALAKAZAM:
+        if p.id in ALAKAZAM_IDS:
             base = 8000 if self._energy_count(p) < 1 else 1200
             if o.inPlayArea == AreaType.ACTIVE:
                 base += 200
@@ -436,9 +610,9 @@ class AlakazamPolicy:
         opp = self.opponent.active[0] if self.opponent.active else None
         if active is None or opp is None:
             return -1
-        if active.id != C.ALAKAZAM:
+        if active.id not in ALAKAZAM_IDS:
             for p in self.me.bench:
-                if p is not None and p.id == C.ALAKAZAM and self._energy_count(p) >= 1:
+                if p is not None and p.id in ALAKAZAM_IDS and self._energy_count(p) >= 1:
                     return 6000
         return -1
 
@@ -450,11 +624,22 @@ class AlakazamPolicy:
             return 800
         aid = o.attackId
         if aid in (ABRA_TELEPORT, DUNSPARCE_TRADE):
-            return 700   # reposition only
-        if active.id in (C.ALAKAZAM, C.KADABRA):
-            dmg = self._active_best_dmg(opp)
-        else:
-            dmg = self._alakazam_damage(aid, opp)
+            # These switch the Active with a benched Pokémon (ends the turn). Only worth
+            # it to bring up a ready attacker when the current Active isn't one and we
+            # can't otherwise swap (Issue 1) — otherwise it's just a wasted reposition.
+            if active.id not in ALAKAZAM_IDS and active.id != C.KADABRA and self._bench_attacker_ready():
+                return 5000
+            return 700
+        # Score THIS specific attack by its own damage — not the best available attack.
+        # (Strange Hacking 338 does 0 damage, just confuses; scoring it like Psychic made
+        # the agent spam it: opponent can't attack, but we deal 0 → stall → we deck out.)
+        dmg = self._alakazam_damage(aid, opp)
+        if aid == STRANGE_HACKING:
+            # Utility only: worth a little to Confuse a threatening Active we can't yet KO,
+            # but never over a real attack and never as a stall. Stays below END-beating
+            # real attacks; above END so it's a last resort if nothing else can act.
+            opp_dangerous = prize_count(opp) >= 2 and self._achievable_hand() * 20 < opp.hp
+            return 600 if opp_dangerous else 200
         if dmg <= 0:
             return 500
         # Lethal: if this KO takes our last remaining prize(s), it wins the game now.
@@ -471,6 +656,15 @@ class AlakazamPolicy:
         if card is None:
             return 0
         ctx = self.context
+        # Opponent card targeting (e.g. Enhanced Hammer: discard a Special Energy from
+        # opp) — strip the Mist/Rock that's blocking Powerful Hand, prefer the Active.
+        if o.playerIndex == self.op_index and not isinstance(card, Pokemon):
+            if card.id in EFFECT_PREVENT_ENERGY:
+                return 2000 + (500 if getattr(o, 'inPlayArea', None) == AreaType.ACTIVE else 0)
+            d = card_table.get(card.id)
+            if d is not None and d.cardType == CardType.SPECIAL_ENERGY:
+                return 300
+            return 50
         if ctx in (SelectContext.SWITCH, SelectContext.TO_ACTIVE):
             return self._score_active_choice(o, card)
         if ctx == SelectContext.SETUP_ACTIVE_POKEMON:
@@ -495,7 +689,7 @@ class AlakazamPolicy:
         return 0
 
     def _score_attach_target(self, p, is_active):
-        if p.id == C.ALAKAZAM:
+        if p.id in ALAKAZAM_IDS:
             return (8000 if self._energy_count(p) < 1 else 1200) + (200 if is_active else 0)
         if p.id in (C.ABRA, C.KADABRA):
             return 1500
@@ -508,23 +702,41 @@ class AlakazamPolicy:
             return self._gust_value(card)
         if o.playerIndex != self.my_index:
             return 0
+        # Promote (after a KO) the body that best keeps us in the game:
+        #  1) a ready Alakazam (can Powerful Hand now) — energy bonus makes it top.
+        #  2) any Alakazam (online next turn after we attach 1).
+        #  3) the tankiest survivor (Dudunsparce 140 / Kadabra 80) so we don't just feed
+        #     the opponent a free prize off a 50-HP Abra; a Kadabra can also evolve into
+        #     Alakazam next turn. NEVER strand the win-con behind a fragile chump-promote.
         score = len(card.energies) * 10
-        if card.id == C.ALAKAZAM:
+        if card.id in ALAKAZAM_IDS:
             score += 200
         elif card.id == C.DUDUNSPARCE:
-            score += 40
+            score += 60          # 140 HP wall, survives most single hits
+        elif card.id == C.KADABRA:
+            score += 45          # 80 HP + one evolve away from Alakazam
+        elif card.id in (C.PSYDUCK, C.SHAYMIN, C.GENESECT):
+            score -= 20          # tech bodies: don't promote into the attacker slot
+        score += getattr(card, 'hp', 0) // 20   # mild "promote the survivor" tiebreak
         return score + 1
 
     def _score_setup_active(self, card):
-        # Open with Abra so we can evolve it in the Active spot (fastest path to
-        # an online Alakazam — opening with Dunsparce delays Alakazam badly).
+        # Opening-active choice. MEASURED (in-process cabt, 60 games vs Lucario):
+        # opening Abra      -> 26% loss, 0 no-offense (evolves in place -> Alakazam fast)
+        # opening Dunsparce -> 57% loss, 5 no-offense (70HP body, no attacker path)
+        # opening Psyduck/Genesect (pure tech) -> ~60% loss (fragile, can't ever attack).
+        # So: Abra >> Dunsparce > (anything that can become an attacker) >> tech basics.
+        # Tech basics (Psyduck 858 / Shaymin 343 / Genesect 142) have NO offensive line
+        # and must be the last resort — opening them strands us with a dead active.
         if card is None:
             return 0
         if card.id == C.ABRA:
-            return 5
+            return 50          # the evolution line -> Alakazam: always preferred
         if card.id == C.DUNSPARCE:
-            return 3
-        return 1
+            return 30          # draw engine; digs into Abra but slow to pressure
+        if card.id in (C.PSYDUCK, C.SHAYMIN, C.GENESECT):
+            return 1           # pure tech, fragile, no attack -> last resort only
+        return 5
 
     def _score_to_bench(self, card):
         if card is None:
@@ -555,7 +767,7 @@ class AlakazamPolicy:
         elif cid == C.DUNSPARCE:
             score += 25 if self.field[C.DUDUNSPARCE] + self.field[C.DUNSPARCE] < 1 else -10
         elif is_energy(cid):
-            score += 30
+            score += 300 if self._energy_starved() else 30   # fuel the attacker first
         return score
 
     def _score_discard(self, card):

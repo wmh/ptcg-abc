@@ -28,12 +28,82 @@ def cname(cid):
     return (c.name if c else f"#{cid}")
 
 
-# ── load OUR agent (human side + AI suggestions) ─────────────────────────────
-QDECK = [int(l) for l in open(ROOT + '/agents/typhlosion/deck.csv') if l.strip()]
-qmod = types.ModuleType('qmod'); qmod.__file__ = ROOT + '/agents/typhlosion/main.py'
-os.chdir(ROOT + '/agents/typhlosion')
-exec(compile(open(ROOT + '/agents/typhlosion/main.py').read(), qmod.__file__, 'exec'), qmod.__dict__)
-os.chdir(ROOT)
+# ── card images from the official PDF (LOCAL ONLY; covers ALL cards) ──────────
+# Method per the official deck-image-renderer notebook: PDF page (40 + the card's
+# index in EN_Card_Data.csv) is that card's image. Rendered on demand, cached to
+# web/card_imgs/ (gitignored — these are TPC card images, never committed).
+import csv as _csv
+_CARD_PDF = ROOT + '/docs/official/Card_ID List_EN.pdf'
+_CARD_CSV = ROOT + '/docs/official/EN_Card_Data.csv'
+_IMG_CACHE = ROOT + '/web/card_imgs'
+_CARD_PAGE = {}
+_PDF = None
+try:
+    import fitz as _fitz
+    import numpy as _np
+    from PIL import Image as _PILImage
+    if os.path.exists(_CARD_PDF) and os.path.exists(_CARD_CSV):
+        os.makedirs(_IMG_CACHE, exist_ok=True)
+        _seen = set()
+        with open(_CARD_CSV, encoding='utf-8-sig') as _f:
+            for _r in _csv.DictReader(_f):
+                _c = (_r.get('Card ID') or '').strip()
+                if _c.isdigit() and int(_c) not in _seen:
+                    _CARD_PAGE[int(_c)] = 39 + len(_seen)   # page 40 (idx 39) = first card
+                    _seen.add(int(_c))
+        _PDF = _fitz.open(_CARD_PDF)
+        print(f'card images: {len(_CARD_PAGE)} cards from official PDF (cache {_IMG_CACHE})')
+except Exception as _e:
+    _PDF = None
+    print(f'card images disabled ({_e}); UI falls back to text cards')
+
+
+def render_card_png(cid):
+    """Render+crop one card image from the official PDF (disk-cached). Bytes or None."""
+    if _PDF is None or cid not in _CARD_PAGE:
+        return None
+    path = f'{_IMG_CACHE}/{cid}.png'
+    if os.path.exists(path):
+        return open(path, 'rb').read()
+    try:
+        page = _PDF.load_page(_CARD_PAGE[cid])
+        pix = page.get_pixmap(matrix=_fitz.Matrix(3, 3), alpha=False)
+        img = _PILImage.frombytes('RGB', (pix.width, pix.height), pix.samples)
+        a = _np.asarray(img); h, w = a.shape[:2]
+        roi = a[int(h * 0.02):int(h * 0.70), int(w * 0.04):int(w * 0.96)]
+        dark = _np.max(255 - roi.astype(_np.int16), axis=2) > 28
+        ys, xs = _np.where(dark)
+        crop = _PILImage.fromarray(roi[ys.min():ys.max() + 1, xs.min():xs.max() + 1]) if len(xs) else img
+        crop.save(path)
+        return open(path, 'rb').read()
+    except Exception:
+        return None
+
+
+# ── load OUR agent (human side + AI suggestions) — selectable deck ───────────
+ME_DIRS = {'bellibolt': 'agents/bellibolt', 'typhlosion': 'agents/typhlosion',
+           'alakazam': 'agents/alakazam'}
+ME = {'mod': None, 'deck': None, 'Policy': None, 'name': None}
+
+
+def load_me(name):
+    """Load one of our agents (its deck + module + Policy class) as the human side."""
+    if name not in ME_DIRS:
+        name = 'typhlosion'
+    if ME['name'] == name:
+        return
+    d = ROOT + '/' + ME_DIRS[name]
+    deck = [int(l) for l in open(d + '/deck.csv') if l.strip()]
+    mod = types.ModuleType('me_' + name); mod.__file__ = d + '/main.py'
+    os.chdir(d)
+    exec(compile(open(d + '/main.py').read(), mod.__file__, 'exec'), mod.__dict__)
+    os.chdir(ROOT)
+    Policy = next(v for k, v in mod.__dict__.items()
+                  if k.endswith('Policy') and isinstance(v, type))
+    ME.update(mod=mod, deck=deck, Policy=Policy, name=name)
+
+
+load_me('typhlosion')   # default
 
 
 def load_opp(kind):
@@ -129,7 +199,7 @@ def _note_action(obs_dict, indices):
         pi = obs.current.yourIndex
         side = 'me' if pi == GAME['human'] else 'opp'
         who = '你' if side == 'me' else '電腦'
-        c = qmod.get_card(obs, opt.area, opt.index, pi)
+        c = ME['mod'].get_card(obs, opt.area, opt.index, pi)
         nm = cname(c.id).replace("Ethan's ", "").replace("Iono's ", "") if c else '?'
         GAME['log'].append({'side': side, 'type': 90, 'txt': f'✨ {who} 使用特性「{nm}」',
                             'reveal': (c.id if c else None), 'seq': GAME['logseq']})
@@ -185,16 +255,16 @@ def option_ids(obs, opt, my_index):
             return (obs.current.players[my_index].active[0].id
                     if obs.current.players[my_index].active else None), opt.attackId
         if t in (OptionType.PLAY, OptionType.EVOLVE):
-            c = qmod.get_card(obs, AreaType.HAND, opt.index, my_index)
+            c = ME['mod'].get_card(obs, AreaType.HAND, opt.index, my_index)
             return (c.id if c else None), None
         if t == OptionType.ABILITY:
-            c = qmod.get_card(obs, opt.area, opt.index, my_index)
+            c = ME['mod'].get_card(obs, opt.area, opt.index, my_index)
             return (c.id if c else None), None
         if t in (OptionType.ENERGY, OptionType.ATTACH):
-            c = qmod.get_card(obs, opt.inPlayArea, opt.inPlayIndex, my_index)
+            c = ME['mod'].get_card(obs, opt.inPlayArea, opt.inPlayIndex, my_index)
             return (c.id if c else None), None
         if t == OptionType.CARD:
-            c = qmod.get_card(obs, getattr(opt, 'area', None) or AreaType.HAND, opt.index, my_index)
+            c = ME['mod'].get_card(obs, getattr(opt, 'area', None) or AreaType.HAND, opt.index, my_index)
             return (c.id if c else None), None
     except Exception:
         pass
@@ -219,14 +289,14 @@ def label_option(obs, opt, my_index):
     if t == OptionType.RETREAT:
         return '↩ 撤退 Retreat'
     if t == OptionType.ABILITY:
-        c = qmod.get_card(obs, opt.area, opt.index, my_index)
+        c = ME['mod'].get_card(obs, opt.area, opt.index, my_index)
         return f'✨ 特性 {cname(c.id) if c else ""}'
     if t == OptionType.EVOLVE:
-        c = qmod.get_card(obs, AreaType.HAND, opt.index, my_index)
+        c = ME['mod'].get_card(obs, AreaType.HAND, opt.index, my_index)
         return f'⬆ 進化 → {cname(c.id) if c else ""}'
     cn = CTX.get(obs.select.context, '') or ''   # context name, e.g. 'DISCARD_ENERGY'
     if t in (OptionType.ENERGY, OptionType.ATTACH):
-        tgt = qmod.get_card(obs, opt.inPlayArea, opt.inPlayIndex, my_index)
+        tgt = ME['mod'].get_card(obs, opt.inPlayArea, opt.inPlayIndex, my_index)
         tn = cname(tgt.id).replace(chr(39), '') if tgt else '?'
         if 'DISCARD' in cn:
             return f'🗑 丟棄能量（從 {tn}）'
@@ -234,7 +304,7 @@ def label_option(obs, opt, my_index):
             return f'✋ 拿回能量（{tn}）'
         return f'🔋 貼能量 → {tn}'
     if t in (OptionType.PLAY, OptionType.CARD, OptionType.TOOL_CARD, OptionType.ENERGY_CARD):
-        c = qmod.get_card(obs, getattr(opt, 'area', None) or AreaType.HAND, opt.index, my_index)
+        c = ME['mod'].get_card(obs, getattr(opt, 'area', None) or AreaType.HAND, opt.index, my_index)
         nm = cname(c.id) if c else 'card'
         if t == OptionType.PLAY:
             return f'▶ 使用 {nm}'
@@ -283,9 +353,9 @@ def state_json(msg=''):
     if not over and obs.select is not None and st.yourIndex == g['human']:
         # AI suggestion + per-option scores (our strategy)
         try:
-            policy = qmod.QuilavaPolicy(obs)
+            policy = ME['Policy'](obs)
             ranked, scores = policy.rank()
-            ai_pick = qmod.normalize_selection(ranked, scores, obs.select)
+            ai_pick = ME['mod'].normalize_selection(ranked, scores, obs.select)
         except Exception:
             scores = [0] * len(obs.select.option); ai_pick = []
         out['ai_pick'] = ai_pick
@@ -320,17 +390,27 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(ROOT + '/web/card_db.json', 'rb').read(), 'application/json; charset=utf-8')
         if u.path == '/card_images.json':
             return self._send(200, open(ROOT + '/web/card_images.json', 'rb').read(), 'application/json; charset=utf-8')
+        if u.path.startswith('/card_img/'):
+            try:
+                cid = int(u.path.rsplit('/', 1)[1].split('.')[0])
+            except Exception:
+                return self._send(404, b'', 'image/png')
+            data = render_card_png(cid)
+            if data:
+                return self._send(200, data, 'image/png')
+            return self._send(404, b'', 'image/png')
         if u.path == '/new':
             q = parse_qs(u.query)
             opp = q.get('opp', ['crustle'])[0]
+            load_me(q.get('me', ['typhlosion'])[0])   # which of OUR decks you pilot
             m, deck = load_opp(opp)
             GAME['opp_mod'], GAME['opp_deck'] = m, deck
             GAME['human'] = 0
             GAME['log'] = []; GAME['logseq'] = 0
-            GAME['obs_dict'], _ = battle_start(QDECK, deck)
+            GAME['obs_dict'], _ = battle_start(ME['deck'], deck)
             GAME['over'] = False
             _advance_opponent()
-            return self._send(200, json.dumps(state_json(f'新對局 vs {opp}')))
+            return self._send(200, json.dumps(state_json(f'新對局:{ME["name"]} vs {opp}')))
         if u.path == '/state':
             return self._send(200, json.dumps(state_json()))
         return self._send(404, '{}')

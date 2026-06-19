@@ -53,11 +53,13 @@ def dk(d):
 
 
 def consensus_deck(arch_name):
-    """Most common winning decklist for an archetype, from the 6-17 episodes."""
+    """Most common winning decklist for an archetype, from the 6-17 episodes.
+    DETERMINISTIC: sorts the episode list and the tie-break so the SAME deck is produced
+    every run (a non-deterministic opponent makes cross-run A/B meaningless)."""
     import zipfile
     z = zipfile.ZipFile('/tmp/ep17/pokemon-tcg-ai-battle-episodes-2026-06-17.zip')
     builds = Counter()
-    for n in [x for x in z.namelist() if x.endswith('.json')]:
+    for n in sorted(x for x in z.namelist() if x.endswith('.json')):
         try:
             data = json.loads(z.read(n)); rw = data['rewards']
             if rw[0] == rw[1]: continue
@@ -65,10 +67,13 @@ def consensus_deck(arch_name):
             d = data['steps'][1][w]['action']
             if dk(d) == arch_name and len(d) == 60:
                 builds[tuple(sorted(d))] += 1
-                if sum(builds.values()) > 40: break
+                if sum(builds.values()) > 120: break   # larger, representative sample
         except Exception:
             continue
-    return list(builds.most_common(1)[0][0]) if builds else None
+    if not builds:
+        return None
+    best = max(builds.items(), key=lambda kv: (kv[1], kv[0]))   # count, then sorted tuple
+    return list(best[0])
 
 
 def prep_opponent(opp):
@@ -81,8 +86,15 @@ def prep_opponent(opp):
     open(d + '/main.py', 'w').write(DECK_FIX + src)
     deck = CONSENSUS.get(opp)
     if deck is None:
-        archname = {'abomasnow': 'Mega Abomasnow ex', 'dragapult': 'Dragapult ex'}[opp]
-        deck = consensus_deck(archname)
+        # Cache the generated consensus deck to a STABLE file so the opponent is pinned
+        # across runs (otherwise A/B comparisons are run against different opponents).
+        cache = ROOT + f'/tools/.opp_cache_{opp}.csv'
+        if os.path.exists(cache):
+            deck = [int(x) for x in open(cache) if x.strip()]
+        else:
+            archname = {'abomasnow': 'Mega Abomasnow ex', 'dragapult': 'Dragapult ex'}[opp]
+            deck = consensus_deck(archname)
+            open(cache, 'w').write('\n'.join(map(str, deck)))
     open(d + '/deck.csv', 'w').write('\n'.join(map(str, deck)))
     if not os.path.exists(d + '/cg'):
         import shutil; shutil.copytree(ROOT + '/docs/official/models/cg-lib/cg', d + '/cg')
@@ -96,13 +108,28 @@ def main():
     our = ROOT + '/' + our_dir + '/main.py'
     if not os.path.exists(ROOT + '/' + our_dir + '/cg'):
         import shutil; shutil.copytree(ROOT + '/docs/official/models/cg-lib/cg', ROOT + '/' + our_dir + '/cg')
-    oppfile = our if opp == 'mirror' else prep_opponent(opp)
+    # Load OUR agent as a pre-built callable so its deck is read ONCE at cwd=ROOT. cabt does
+    # not set __file__, so a file-loaded agent falls back to a cwd-relative 'deck.csv'; the
+    # opponent's DECK_FIX chdir's cwd away and our agent would otherwise pilot the OPPONENT's
+    # deck in later games / odd seats (this silently corrupted every prior cabt result).
+    def _our_cb():
+        from kaggle_environments.agent import get_last_callable
+        cur = os.getcwd(); os.chdir(ROOT)
+        try:
+            cb = get_last_callable(open(our).read(), path=our)
+        finally:
+            os.chdir(cur)
+        md = getattr(cb, '__globals__', {}).get('my_deck')
+        assert md and len(md) == 60, f'our deck failed to load ({md and len(md)})'
+        return cb
+    our_cb = _our_cb()
+    oppfile = _our_cb() if opp == 'mirror' else prep_opponent(opp)
     from kaggle_environments import make
     w = [0, 0, 0]
     for g in range(games):
         env = make('cabt')
         # alternate seat
-        order = [our, oppfile] if g % 2 == 0 else [oppfile, our]
+        order = [our_cb, oppfile] if g % 2 == 0 else [oppfile, our_cb]
         res = env.run(order)
         r = [s.get('reward') for s in res[-1]]
         us = 0 if g % 2 == 0 else 1
