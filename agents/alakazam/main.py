@@ -237,10 +237,32 @@ class AlakazamPolicy:
     def _gust_ko_targets(self):
         return [p for p in self.opponent.bench if p is not None and self._active_best_dmg(p) >= p.hp]
 
+    def _target_value(self, p):
+        """Tactical worth of removing opponent Pokémon p (ported from the official
+        sample agents): prizes + invested energy/tools + evolution stage; avoid
+        wasting a KO on a disposable draw-support basic."""
+        d = card_table.get(p.id)
+        s = prize_count(p) * 1000
+        s += len(p.energies) * 150
+        s += len(getattr(p, 'tools', []) or []) * 100
+        if d is not None:
+            if getattr(d, 'stage2', 0):
+                s += 250
+            elif getattr(d, 'stage1', 0):
+                s += 130
+        if p.id in (144, 322, 323, 337):     # Squawkabilly ex / Noctowl / Fan Rotom / Archaludon ex
+            s -= 200
+        if p.id == 112 and len(p.energies) >= 1:   # Munkidori (key disruptor)
+            s += 300
+        s += getattr(p, 'hp', 0)
+        return s
+
     def _gust_value(self, p):
         d = self._active_best_dmg(p)
         if d >= p.hp:
-            return 5000 + prize_count(p) * 1000 - getattr(p, 'hp', 0)
+            if prize_count(p) >= len(self.me.prize):
+                return 90000        # KO-ing this wins the game — gust it
+            return 8000 + self._target_value(p)
         return max(1, d)
 
     # — entry —
@@ -291,9 +313,9 @@ class AlakazamPolicy:
             # from BENCH almost every turn unless our deck is about to empty.
             if o.area != AreaType.BENCH:
                 return -1
-            if self.me.deckCount <= 7:
-                return -1
-            return 15000
+            if self.me.deckCount <= 7:        # draw-engine deck: draw aggressively
+                return -1                     # (≤8 guard tested WORSE: cabt 50→36% — its
+            return 15000                      #  win-con is a huge hand, so don't stop early)
         return 9000
 
     # — play —
@@ -435,6 +457,9 @@ class AlakazamPolicy:
             dmg = self._alakazam_damage(aid, opp)
         if dmg <= 0:
             return 500
+        # Lethal: if this KO takes our last remaining prize(s), it wins the game now.
+        if opp.hp <= dmg and prize_count(opp) >= len(self.me.prize):
+            return 90000
         score = 1000 + min(dmg, 320)
         if opp.hp <= dmg:
             score += 2500 + prize_count(opp) * 200

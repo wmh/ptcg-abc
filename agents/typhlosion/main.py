@@ -275,11 +275,33 @@ class QuilavaPolicy:
                 out.append(p)
         return out
 
+    def _target_value(self, p):
+        """Tactical worth of removing opponent Pokémon p (ported from the official
+        sample agents): prizes + invested energy/tools + evolution stage; avoid
+        wasting a KO on a disposable draw-support basic."""
+        d = card_table.get(p.id)
+        s = prize_count(p) * 1000
+        s += len(p.energies) * 150
+        s += len(getattr(p, 'tools', []) or []) * 100
+        if d is not None:
+            if getattr(d, 'stage2', 0):
+                s += 250
+            elif getattr(d, 'stage1', 0):
+                s += 130
+        if p.id in (144, 322, 323, 337):     # Squawkabilly ex / Noctowl / Fan Rotom / Archaludon ex
+            s -= 200
+        if p.id == 112 and len(p.energies) >= 1:   # Munkidori (key disruptor)
+            s += 300
+        s += getattr(p, 'hp', 0)
+        return s
+
     def _gust_value(self, p):
         """How much we want opponent Pokémon p as their Active (to attack it)."""
         d = self._active_best_dmg(p)
-        if d >= p.hp:   # KO-able: prefer high prize / low HP / fragile setup pieces
-            return 5000 + prize_count(p) * 1000 - getattr(p, 'hp', 0)
+        if d >= p.hp:   # KO-able
+            if prize_count(p) >= len(self.me.prize):
+                return 90000        # KO-ing this wins the game — gust it
+            return 8000 + self._target_value(p)
         return max(1, d)
 
     # — entry —
@@ -342,7 +364,7 @@ class QuilavaPolicy:
                 return -1   # only the benched copy — never shuffle away our active body
             # Use it (almost) every turn as the consistency engine; the only stop is a
             # real deck-out risk = OUR deck about to empty (absolute, not "opp hoards").
-            if self.me.deckCount <= 7:
+            if self.me.deckCount <= 7:        # draw-engine: keep drawing (≤8 not adopted)
                 return -1
             return 11000
         if card.id == C.VICTINI:
@@ -494,6 +516,9 @@ class QuilavaPolicy:
         else:
             dmg = self._typhlosion_damage(aid, opp)
         ko = opp.hp <= dmg
+        # Lethal: if this KO takes our last remaining prize(s), it wins the game now.
+        if ko and aid != EMBER and prize_count(opp) >= len(self.me.prize):
+            return 90000
         # A damaging attack is ALWAYS better than ending the turn (free value), so it
         # must score above END (=0). Developing / promoting Typhlosion already outrank
         # attacking (play/evolve ~18000+, retreat 6000), so those still happen first;
