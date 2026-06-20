@@ -28,15 +28,17 @@ drove the deck choices, and tooling to evaluate and play against them locally.
 ## Repository layout
 
 ```
-agents/                 # three complete ladder agents (deck + policy)
+agents/                 # ladder agents (deck + policy)
   bellibolt/            #   Iono's Bellibolt ex — simple Lightning engine (our best ladder result)
   typhlosion/           #   Ethan's Typhlosion + Dudunsparce — Stage-2 combo
   alakazam/             #   胡地小人 / Alakazam + Dudunsparce — single-prize, current top meta
     main.py             #   the agent: AlakazamPolicy + robust scaffolding
     deck.csv            #   60 card IDs
     build_submission.sh #   packs main.py + deck.csv + cg/ into submission.tar.gz
+  alakazam_mist/        #   alakazam + Mist Energy mirror tech (defensive overlay vs Powerful Hand)
 docs/strategy/          # meta + deck strategy write-ups (Traditional Chinese)
 tools/cabt_eval.py      # evaluate an agent vs meta decks in the official cabt environment
+tools/cabt_ab.py        # A/B two of our agent dirs against each other in the cabt env
 web/                    # browser sandbox: play a human vs the agent, see its scored options
 research/               # early / superseded experiments (env wrapper, MCTS, RL & imitation trainers)
 ```
@@ -54,6 +56,7 @@ guarantees it never crashes.
 | **bellibolt** | Iono's Bellibolt ex | Stream Lightning with *Electric Streamer*, hit 230 with Thunderous Bolt; Kilowattrel (non-ex) answers Crustle's ex-immunity. **Simple, consistent.** | **836 (best)** |
 | **typhlosion** | Ethan's Typhlosion + Dudunsparce | Buddy Blast scales with Ethan's Adventures in discard; Dudunsparce *Run Away Draw* engine; Boss's Orders gust. | 532 |
 | **alakazam** | 胡地小人 (Alakazam + Dudunsparce) | All single-prize. *Powerful Hand* places **20 damage × cards in hand** — the Dudunsparce engine builds a 15–20 card hand for 300–400 damage. Current top meta. | A/B pending |
+| **alakazam_mist** | alakazam + 2 Mist Energy | Mirror/counter-deck tech: *Mist Energy* negates *Powerful Hand* (counter placement = an "effect"). Agent overlays Mist on a fuelled attacker when not ahead on prizes. cabt mirror 62–63% vs base (control 50%). | A/B pending |
 
 ## What the meta analysis found
 
