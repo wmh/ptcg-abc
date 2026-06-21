@@ -39,7 +39,10 @@ NB = {
     'lucario': ('a-sample-rule-based-agent-mega-lucario-ex-deck.ipynb', 2),
     'abomasnow': ('a-sample-rule-based-agent-mega-abomasnow-ex-deck.ipynb', 2),
     'dragapult': ('a-sample-rule-based-agent-dragapult-ex-deck.ipynb', 3),
+    'iono': ('a-sample-rule-based-agent-iono-s-deck.ipynb', 2),   # official Iono's Bellibolt sample
 }
+# Iono sample reads deck.csv -> give it the consensus Iono's Bellibolt ex list (our build).
+CONSENSUS['iono'] = [int(_l) for _l in open(ROOT + '/agents/bellibolt/deck.csv') if _l.strip()]
 
 
 def dk(d):

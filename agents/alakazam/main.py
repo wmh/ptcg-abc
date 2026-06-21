@@ -17,7 +17,8 @@ class C:
     ALAKAZAM_PSY = 245    # Stage2 TECH (1x): Psychic = 10 + 50/energy on opp Active.
                           # It does DAMAGE (not counters) -> bypasses Mist Energy; punishes
                           # energy-loaded ex. Our answer to Mist decks (Dragapult/Crustle).
-    DUNSPARCE = 305       # Basic -> Dudunsparce
+    DUNSPARCE = 65        # Basic -> Dudunsparce (id65 = the top-pilot consensus printing; id305
+                          # is the other Dunsparce printing — both evolve into Dudunsparce 66)
     DUDUNSPARCE = 66      # Stage1 draw engine (Run Away Draw)
     PSYDUCK = 858         # Damp (ability lock tech)
     SHAYMIN = 343         # Flower Curtain (protect non-Rule-Box bench)
@@ -478,12 +479,17 @@ class AlakazamPolicy:
 
     def _score(self, o):
         t = o.type
+        # First-or-second: GO FIRST. The Elo≥1150 Alakazam pool goes first 35/35 (unanimous) —
+        # a setup/evolution deck wants the extra turn to build the Abra→Kadabra→Alakazam line and
+        # get the Dudunsparce draw engine online before it has to attack. (Was hardcoded second.)
+        if self.context == SelectContext.IS_FIRST:
+            return 100 if t == OptionType.YES else 0
         if t == OptionType.NUMBER:
             return o.number if o.number is not None else 0
         if t == OptionType.YES:
             return 1
         if t == OptionType.NO:
-            return 100 if self.context == SelectContext.IS_FIRST else 0  # go second (setup deck)
+            return 0
         if t == OptionType.CARD:
             return self._score_card(o)
         if t == OptionType.PLAY:
@@ -552,6 +558,10 @@ class AlakazamPolicy:
             # deck is low, stop filtering ourselves out of a won game (real-ladder bug).
             if self._deck_preserve():
                 return -1
+            # NB: top pilots activate Run Away Draw ~1/4 as often as we did (MAIN ABILITY 163 vs
+            # our 622) — but a blunt hand-cap gave ~0 divergence gain here and risks the documented
+            # cabt regression (deck-out guards hurt cabt), so we keep the aggressive-draw identity
+            # and leave "draw less" as a separate real-ladder A/B. Only the high-hand floor stays.
             if self.me.handCount >= 14 and self.me.deckCount <= 12:
                 return -1
             return 15000
@@ -850,16 +860,21 @@ class AlakazamPolicy:
         #  3) the tankiest survivor (Dudunsparce 140 / Kadabra 80) so we don't just feed
         #     the opponent a free prize off a 50-HP Abra; a Kadabra can also evolve into
         #     Alakazam next turn. NEVER strand the win-con behind a fragile chump-promote.
+        # Promotion order MEASURED against the Elo≥1150 Alakazam pool: they promote the
+        # EVOLUTION LINE (Abra/Kadabra → becomes the Alakazam attacker), NOT the Dudunsparce
+        # wall (a draw-engine dead end that can't pressure). We over-promoted Dudunsparce.
         score = len(card.energies) * 10
         if card.id in ALAKAZAM_IDS:
-            score += 200
-        elif card.id == C.DUDUNSPARCE:
-            score += 60          # 140 HP wall, survives most single hits
+            score += 200         # a powered Alakazam = our attacker
         elif card.id == C.KADABRA:
-            score += 45          # 80 HP + one evolve away from Alakazam
+            score += 95          # 80 HP, one evolve from Alakazam — keep the line going
+        elif card.id == C.ABRA:
+            score += 80          # continues the line to Alakazam (top pilots promote it)
+        elif card.id == C.DUDUNSPARCE:
+            score += 40          # 140 HP wall but a dead end — don't strand the win-con
         elif card.id in (C.PSYDUCK, C.SHAYMIN, C.GENESECT):
             score -= 20          # tech bodies: don't promote into the attacker slot
-        score += getattr(card, 'hp', 0) // 20   # mild "promote the survivor" tiebreak
+        score += getattr(card, 'hp', 0) // 30   # mild "promote the survivor" tiebreak
         return score + 1
 
     def _score_setup_active(self, card):
@@ -902,14 +917,19 @@ class AlakazamPolicy:
             return 0
         cid = card.id
         score = 200 - self.hand[cid] * 40
-        if cid == C.ABRA:
-            score += 40 if self.field[C.ALAKAZAM] + self.field[C.KADABRA] + self.field[C.ABRA] < 2 else -10
-        elif cid == C.ALAKAZAM:
-            score += 60 if self.field[C.ABRA] + self.field[C.KADABRA] >= 1 else 10
-        elif cid == C.KADABRA:
-            score += 40
+        # Top pilots search the DRAW ENGINE (Dudunsparce) and the cheap evolution basics first,
+        # and DON'T hoard the stage-2 Alakazam (one is enough; it's dead without Kadabra+Candy).
+        engine_online = self.field[C.DUDUNSPARCE] >= 1
+        if cid == C.DUDUNSPARCE:
+            score += 90 if not engine_online else 20    # get the draw engine online
         elif cid == C.DUNSPARCE:
-            score += 25 if self.field[C.DUDUNSPARCE] + self.field[C.DUNSPARCE] < 1 else -10
+            score += 70 if self.field[C.DUDUNSPARCE] + self.field[C.DUNSPARCE] < 1 else -10
+        elif cid == C.ABRA:
+            score += 55 if self.field[C.ALAKAZAM] + self.field[C.KADABRA] + self.field[C.ABRA] < 2 else -10
+        elif cid == C.KADABRA:
+            score += 45
+        elif cid == C.ALAKAZAM:
+            score += 50 if (self.hand[C.ALAKAZAM] == 0 and self.field[C.ABRA] + self.field[C.KADABRA] >= 1) else -10
         elif is_energy(cid):
             # When starved, fetch a {P} energy (the only kind that fuels our attacks) — an
             # Enriching (Colorless) doesn't help, so don't prioritise it.

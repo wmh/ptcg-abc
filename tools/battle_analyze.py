@@ -28,7 +28,7 @@ from cg.api import all_attack, all_card_data
 
 AT = {a.attackId: a for a in all_attack()}
 CT = {c.cardId: c for c in all_card_data()}
-OPPONENTS = ['crustle', 'lucario', 'abomasnow', 'dragapult', 'mirror']
+OPPONENTS = ['crustle', 'lucario', 'abomasnow', 'dragapult', 'iono', 'mirror']
 
 # LogType ids we care about
 DRAW, DRAW_REV, TURN_START, TURN_END = 4, 5, 2, 3
@@ -165,8 +165,16 @@ def analyze_game(steps, our_idx, we_lost, our_atk_ids):
 def run_matchup(our_cb, our_path, opp_name, games, our_atk_ids):
     from kaggle_environments import make
     # mirror: a SECOND independent callable (separate module state) so the two seats don't
-    # share our agent's globals; otherwise the file-loaded opponent would drift cwd.
-    oppfile = load_our_callable(our_path) if opp_name == 'mirror' else ce.prep_opponent(opp_name)
+    # share our agent's globals. One of OUR decks (bellibolt/typhlosion/alakazam) as the
+    # opponent is loaded as a callable so it pilots its real deck (not via the sample-bot
+    # path); other opponents come from the consensus sample bots.
+    OUR_AGENTS = {'bellibolt', 'typhlosion', 'alakazam'}
+    if opp_name == 'mirror':
+        oppfile = load_our_callable(our_path)
+    elif opp_name in OUR_AGENTS:
+        oppfile = load_our_callable(ROOT + '/agents/' + opp_name + '/main.py')
+    else:
+        oppfile = ce.prep_opponent(opp_name)
     w = [0, 0, 0]           # win / loss / draw
     agg = {'attack_no_damage': {}, 'no_offense_loss': 0, 'deckout_loss': 0, 'error_games': 0}
     loss_classes = {}       # why we lost: deckout / no_offense / blown_out / close_race / traded_lost
