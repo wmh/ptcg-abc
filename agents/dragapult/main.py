@@ -519,7 +519,7 @@ def _policy(obs_dict: dict) -> list[int]:
                     score = 2000
         elif id == Fezandipiti_ex:
             if pre_ko:
-                score = 50000
+                score = 15000
             elif prize_diff <= -2:
                 score = 5
             elif len(op_state.prize) == 1:
@@ -765,10 +765,10 @@ def _policy(obs_dict: dict) -> list[int]:
             card = get_card(obs, AreaType.HAND, o.index, my_index)
             card_score = hand_scores[o.index]
             if card.id == Dreepy:
-                score = 51000
+                score = 54000
             elif card.id == Fezandipiti_ex:
                 if card_score > 0:
-                    score = 53000
+                    score = 35000
                 else:
                     score = -1
             elif card.id == Latias_ex:
@@ -845,6 +845,8 @@ def _policy(obs_dict: dict) -> list[int]:
             card = get_card(obs, o.area, o.index, my_index)
             pokemon = get_card(obs, o.inPlayArea, o.inPlayIndex, my_index)
             score = attach_score(card.id, pokemon, o.inPlayArea == AreaType.ACTIVE)
+            if pokemon.id == Dragapult_ex and len(pokemon.energies) < 2:
+                score += 25000
         elif o.type == OptionType.EVOLVE:
             pokemon = get_card(obs, o.inPlayArea, o.inPlayIndex, my_index)
             score += len(pokemon.energies)

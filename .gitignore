@@ -31,3 +31,6 @@ tools/.opp_cache_*.csv
 
 # Card images rendered from the official PDF (copyright — local only)
 web/card_imgs/
+
+# AtomCode config (machine-specific)
+.atomcode/
