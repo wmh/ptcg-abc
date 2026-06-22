@@ -672,28 +672,34 @@ class TrevenantPolicy:
             return 0
         cid = card.id
         score = 200 - self.hand[cid] * 30
-        # Top pilots (Debauchery) refill the DRAW/CONSISTENCY engine on every search far more
-        # than they grab Boss/Choice Band (we over-grabbed Boss 221x). Engine first.
-        if cid == C.LILLIE_DET:
-            score += 120
-        elif cid == C.HOPS_BAG:
-            score += 100 if (self._need_attacker_pieces() or self._open_bench()) else 40
-        elif cid == C.SECRET_BOX:
-            score += 90
+        # Search priority MIMICS rank-1 Debauchery (1336, ~our deck). On divergent TO_HAND picks
+        # they grab Secret Box (77x), Choice Band (47x) and Hilda (26x) FAR more than Lillie —
+        # they assemble GUARANTEED toolbox/attack pieces, not hoard random draw. We previously
+        # over-grabbed Lillie (134x). New order: toolbox-assembler / band > consistency-search >
+        # raw draw. (6-20 divergence_decode --player "The Debauchery Tea Party".)
+        if cid == C.SECRET_BOX:
+            score += 130 if self.me.handCount >= 5 else 70   # explosive turn-assembler (needs fodder)
+        elif cid == C.CHOICE_BAND:
+            # the aggro engine: makes Horrifying Revenge cost 0 and +30 — grab one eagerly.
+            score += 115 if self.hand.get(C.CHOICE_BAND, 0) == 0 else 25
         elif cid == C.HILDA:
-            score += 70
+            score += 100 if (self._need_attacker_pieces() or not self._have_attacker()) else 78
+        elif cid == C.HOPS_BAG:
+            score += 95 if (self._need_attacker_pieces() or self._open_bench()) else 40
+        elif cid == C.LILLIE_DET:
+            score += 80                                       # still strong refuel, just below toolbox
         elif cid == C.POKEGEAR:
             score += 55
         elif cid == C.POKE_PAD:
             score += 50
         elif cid == C.TREVENANT:
-            score += 60 if self.field[C.PHANTUMP] else 20   # useless without a Phantump to evolve
+            # grab the EVOLUTION itself when a Phantump is in play to put it on (human grabbed
+            # Trevenant 10x where we grabbed Phantump — get the attacker online a turn sooner).
+            score += 82 if self.field[C.PHANTUMP] else 20
         elif cid == C.PHANTUMP:
             score += 60 if self.field[C.PHANTUMP] + self.field[C.TREVENANT] < 2 else 15
         elif cid == C.SNORLAX:
             score += 35 if not self._has_snorlax() else -20
-        elif cid == C.CHOICE_BAND:
-            score += 30
         elif cid == C.BOSS:
             score += 25
         elif is_energy(cid):
@@ -708,20 +714,24 @@ class TrevenantPolicy:
             return 25 if self.hand[cid] >= 3 else -40
         if self.hand[cid] >= 3:
             return 60                                   # excess duplicate — safe pitch
-        # KEEP the draw/consistency engine (we over-pitched Lillie/Bag; top pilots keep them
-        # and instead discard surplus utility — Pokégear/Postwick/Choice Band/Petrel/Transceiver).
-        if cid in (C.LILLIE_DET, C.HOPS_BAG, C.HILDA, C.SECRET_BOX):
+        # Hop's Bag is the rank-1 pilot's #1 discard fodder (29x): it's a one-shot SETUP search,
+        # NOT draw — once the board is built it's dead weight, so pitch it readily. Keep it only
+        # while we still need attacker bodies AND have bench room to land them.
+        if cid == C.HOPS_BAG:
+            return -30 if (self._need_attacker_pieces() and self._open_bench()) else 50
+        # KEEP the real draw/consistency engine (top pilots keep Lillie/Hilda/Secret Box).
+        if cid in (C.LILLIE_DET, C.HILDA, C.SECRET_BOX):
             return -45
         if cid in (C.TREVENANT, C.PHANTUMP, C.SNORLAX):
             return -50 if self.field[cid] == 0 else 5
         if cid == C.CHOICE_BAND:
-            return 35 if self.hand[cid] >= 2 else 12    # one in hand is plenty
+            return 22 if self.hand[cid] >= 2 else 8     # the aggro engine — keep it (rank-1 pitches it less)
         if cid == C.POSTWICK:
-            return 30 if self.stadium_id == C.POSTWICK else 14   # redundant once ours is down
+            return 45 if self.stadium_id == C.POSTWICK else 14   # redundant once ours is down
         if cid == C.BOSS:
             return 18
         if cid in (C.POKEGEAR, C.POKE_PAD, C.TRANSCEIVER, C.PETREL, C.NIGHT_STRETCHER):
-            return 25                                   # utility — fine to pitch (e.g. for Secret Box)
+            return 28                                   # utility — fine to pitch (e.g. for Secret Box)
         if cid == C.CRAMORANT and self._opp_prizes() not in (3, 4):
             return 40
         return 12
