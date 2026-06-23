@@ -155,10 +155,11 @@ select{padding:9px 12px;border-radius:8px;background:var(--bg-card);color:var(--
   <span class="hint">右側顯示 AI 對每步的建議與分數。點卡片看詳情。</span>
   <span style="flex:1"></span>
   <span class="hint">你的牌組</span>
-  <select id="me"><option value="typhlosion">🔥 Ethan's Typhlosion</option><option value="bellibolt">⚡ Iono's Bellibolt</option><option value="alakazam">🔮 胡地 Alakazam</option></select>
+  <select id="me"></select>
   <span class="hint">對手</span>
-  <select id="opp"><option value="crustle">🪨 Crustle 岩殿居蟹</option><option value="lucario">🥊 Mega Lucario 格鬥</option></select>
+  <select id="opp"></select>
   <button class="btn" onclick="newGame()">🔄 新對局</button>
+  <a class="btn" href="/deck" target="_blank" style="text-decoration:none">📖 牌組圖鑑</a>
 </header>
 
 <div id="wrap">
@@ -384,9 +385,16 @@ async function send(indices){
   render(await r.json());
 }
 async function newGame(){ LASTSEQ=-1; $('#logbox').innerHTML=''; const r=await fetch('/new?me='+$('#me').value+'&opp='+$('#opp').value); render(await r.json()); }
+async function loadDecks(){
+  const decks=await (await fetch('/decks')).json();
+  const opts=decks.map(d=>`<option value="${d.id}">${d.name}</option>`).join('');
+  $('#me').innerHTML=opts; $('#opp').innerHTML=opts;
+  $('#me').value='megastarmie'; $('#opp').value='dragapult';
+}
 (async()=>{
   DB=await (await fetch('/card_db.json')).json();
   try{ IMG=await (await fetch('/card_images.json')).json(); }catch(e){ IMG={}; }
+  await loadDecks();
   newGame();
 })();
 </script>

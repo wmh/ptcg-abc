@@ -9,7 +9,7 @@ from cg.api import (
 )
 
 
-# ── Card IDs (胡地小人 / Alakazam + Dudunsparce single-prize) ─────────────────
+# ── Card IDs (Alakazam + Dudunsparce single-prize) ──────────────────────────
 class C:
     ABRA = 741            # Basic -> Kadabra
     KADABRA = 742         # Stage1 (Psychic Draw on evolve) -> Alakazam
