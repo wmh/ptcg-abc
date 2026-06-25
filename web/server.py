@@ -479,7 +479,7 @@ def state_json(msg=''):
 # ── per-deck strategy pages (decklist + 中文使用策略) ─────────────────────────
 STRATEGIES = {
  'dragapult': "幽靈龍撒傷／控制。核心招 <b>Phantom Dive [火][超]=200</b>，並在對手板凳隨意放 6 個傷害指示物(=60) —— 用來預埋傷害、做「多獎回合」一次拿好幾張賞牌。便宜招 Jet Headbutt[無]=70。靠 <b>4× Crushing Hammer</b> 擲硬幣棄對手能量、Budew 道具鎖切斷對手節奏。Rare Candy 可從 Dreepy 直跳 Dragapult。<b>後攻</b>。剋 Trevenant/Chandelure;唯一明顯苦手是 Cinderace。",
- 'megastarmie': "水火雙打手 toolbox(天梯第 1 名 keidroid 牌組)。主攻 <b>Jetting Blow [水]=120 +對板凳 1 隻 50</b>(只需 1 水，是主力，撒傷預埋多獎)。收尾 <b>Nebula Beam [無][無][無]=210</b>，無視弱抗與對手前排的所有效果(穿透減傷/迷霧)。<b>Ignition Energy 貼在進化寶可夢=3 無色，但回合結束會棄掉</b> → 只當 Nebula 的一次性點火，平時用基本水養。Cinderace 用特性開局面朝下進場、Turbo Flare 搜 3 能量加速。Wally's Compassion 全回血+能量回手再利用。<b>先攻</b>。",
+ 'megastarmie': "水火雙打手 toolbox(天梯第 1 名 keidroid 牌組)。主攻 <b>Jetting Blow [水]=120 +對板凳 1 隻 50</b>(只需 1 水，是主力，撒傷預埋多獎)。收尾 <b>Nebula Beam [無][無][無]=210</b>，無視弱抗與對手前排的所有效果(穿透減傷/迷霧)。<b>Ignition Energy 貼在進化寶可夢=3 無色，但回合結束會棄掉</b> → 只當 Nebula 的一次性點火，平時用基本水養。Cinderace 用特性開局面朝下進場、Turbo Flare 搜 3 能量加速。Wally's Compassion 全回血+能量回手再利用。<b>先攻</b>。⚠ 全副只有 <b>Staryu 一種基礎</b>：當手牌+板凳都沒有基礎時，優先 <b>寶芬/高級球</b>搜基礎(高級球需能安全棄 2 張)、其次 <b>Lillie</b> 抽牌挖；<b>絕不打 Hilda</b>(只能搜進化，補不了基礎)。",
  'megastarmie_v2': "同寶石海星，但 pilot 調整:更偏好 Jetting Blow 撒傷主攻、加強 Crushing Hammer 干擾、Ignition 只在能 KO 多獎 ex 或穿透保護時才當 Nebula 點火。",
  'alakazam': "胡地全單獎。主攻 <b>Powerful Hand = 每張手牌 ×20 傷害</b>(囤到 15-20 張手牌 → 300-400 傷一發帶走)。靠 <b>Dudunsparce(Run Away Draw 抽 3)</b>當抽牌引擎堆手牌。對迷霧牌組:用 245 號胡地的 Psychic(直接打傷害，穿透迷霧能量)。Enhanced Hammer 拆對手特殊能量。⚠ Powerful Hand 是「放指示物(效果)」，帶迷霧/岩格鬥能量的目標免疫。",
  'trevenant': "Hop 的樹靈，全單獎、以小換大。主攻 <b>Horrifying Revenge [無]=30</b>，若上回合有 Hop's 被 KO 則 +100(=130);搭 Choice Band 費用歸零、Postwick 場地 +30。狂鋪便宜單獎身體，跟對手的 3 獎 ex 換獎，打賞牌數賽跑。Cramorant 在對手剩 3-4 獎時 Fickle Spitting=120。",

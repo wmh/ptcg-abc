@@ -30,7 +30,10 @@ def cname(cid):
 
 def load_agent(agent_dir):
     cur = os.getcwd()
-    os.chdir(ROOT + '/' + agent_dir)
+    d = ROOT + '/' + agent_dir
+    os.chdir(d)
+    sys.path.insert(0, d)
+    sys.path.insert(0, ROOT + '/agents/_base')  # for policy_base import
     try:
         spec = importlib.util.spec_from_file_location('our_agent', 'main.py')
         m = importlib.util.module_from_spec(spec)

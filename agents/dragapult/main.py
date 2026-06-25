@@ -443,7 +443,7 @@ def _policy(obs_dict: dict) -> list[int]:
                 score += 1000
             return score
         if pokemon.id == Budew:
-            return -1
+            return UNNECESSARY
         elif pokemon.id == Meowth_ex or pokemon.id == Fezandipiti_ex or pokemon.id == Latias_ex:
             if active and not can_switch and not my_state.asleep and not my_state.paralyzed:
                 if bench_attacker or field_counts[Budew] >= 1:
@@ -451,18 +451,15 @@ def _policy(obs_dict: dict) -> list[int]:
                 else:
                     return 18000
             else:
-                return -1
+                return UNNECESSARY
         if active and can_main_attack:
-            return -1
+            return UNNECESSARY
         score = 20000
         if energy_count >= 2:
-            if active and not can_switch and not my_state.asleep and not my_state.paralyzed:
-                score += 200
-            else:
-                return -1
+            return UNNECESSARY          # already fueled up, don't over-fill
         elif energy_count == 1:
             if attach_id == pokemon.energyCards[0].id:
-                return -1
+                return UNNECESSARY
             if pokemon.id == Dragapult_ex:
                 score += 250
             elif pokemon.id == Dreepy:
@@ -752,6 +749,11 @@ def _policy(obs_dict: dict) -> list[int]:
                     score = attach_score(context_card_id, card, o.area == AreaType.ACTIVE)
                     if card.id == Dragapult_ex:
                         score += 200
+                elif context == SelectContext.ATTACH_TO:
+                    if isinstance(card, Pokemon):
+                        score = attach_score(context_card_id, card, o.area == AreaType.ACTIVE)
+                    else:
+                        score = 0
         elif o.type == OptionType.ENERGY_CARD or o.type == OptionType.ENERGY:
             if o.playerIndex != state.yourIndex:
                 if o.area == AreaType.BENCH:
@@ -878,7 +880,7 @@ def _policy(obs_dict: dict) -> list[int]:
     if len(scores) >= 1:
         sorted_scores = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
         for i in range(select.maxCount):
-            if (sorted_scores[i][1] >= 0
+            if sorted_scores[i][1] > UNNECESSARY and (sorted_scores[i][1] >= 0
                     or select.minCount > i
                     or (context != SelectContext.TO_BENCH and context != SelectContext.SETUP_BENCH_POKEMON)):
                 output.append(sorted_scores[i][0])

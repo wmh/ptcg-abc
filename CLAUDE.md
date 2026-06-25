@@ -1,12 +1,32 @@
 # Pokémon TCG AI Battle Challenge — Project Guide
 
+## 🔴 關鍵規則（Session 重啟時第一條）
+
+1. **只提交版本當用戶明確說「提交」或「submit」**
+   — 不可以自作主張 build + submit，即使你認為代碼是好的。
+2. **每輪 Session 先讀這份文件的 Current status + 下方 doc 列表**
+   — 確定目前做什麼、做到哪、什麼是廢案。
+3. **每輪 Session 先讀 `docs/per_deck_policy_plan.md`**
+   — 這是當前策略方針（比照官方 sample 寫每張牌的完整政策）。
+
 Competition: **Pokémon TCG AI Battle Challenge** (Kaggle × The Pokémon Company × 松尾研 × HEROZ).
 Goal: build an `agent(obs_dict)` that wins the standard-format card battle. Two tracks:
 - **Simulation**: `pokemon-tcg-ai-battle` (Elo ladder, auto-battles). Deadline **2026-08-16**.
 - **Strategy report**: `pokemon-tcg-ai-battle-challenge-strategy` ($240K). Deadline **2026-09-13**.
 - 5 submissions/day; latest 2 are scored.
 
-## Current status (2026-06-22 PM)
+## Current status (2026-06-25 — megastarmie Hilda no-Basic fix SHIPPED)
+
+- **6-25 SHIPPED (用戶明確指示提交): `agents/megastarmie` — 修「無基礎緊急狀態」選牌 bug。** 實戰發現：手牌+板凳都沒基礎、場上只剩一隻 Mega Starmie 當前鋒時，agent 打 **Hilda**(只能搜進化、搜不到基礎)拿了張死卡 → 前鋒被 KO 直接輸。修法(只在 `basic_emergency` 觸發，不動正常分佈)：新增 `bench_body_count`/`basic_emergency` 旗標；**Buddy Poffin 20000 > Ultra Ball 18000(需 `safe_pitch_count()>=2` 才能安全棄 2 張) > Lillie 12000 ≫ Hilda 1500**；`score_discard` 保護 Lillie/Harlequin 不被自己的 Ultra Ball 丟掉。`check_agent` PASS(0 over-fill/fallback)。等 TW 08:00 後確認分數。
+- **6-25 上午改寫的 `agents/megastarmie` = Sample-Style 2.0 全策略版**(per-card hand_score + 攻擊規劃器 + HP-zone DAMAGE_COUNTER + Turbo Flare 三道煞車防過量填能)。`megastarmie_v2` 是改寫前的 BasePolicy 薄子類舊版(保留比對用)。`megastarmie_pokepad` 測試分支已刪。
+- **最新分數參考(6-24 提交)：megastarmie v3 871.5(最高) / v4 751.2 / v5 722.7；夯 757.0；Dragapult v3 636.7。** 歷史高點 1006（6/19 Alakazam）。
+- **⚠ 提交紀律：只在用戶明確說「提交/submit」時才 build+submit（本次是用戶明確指示）。**
+- **目前策略方針：為每個牌組寫「像官方 sample 一樣的完整政策」(`docs/per_deck_policy_plan.md`)。**
+  - **不搞 ML / imitation learning / 自動化管線。**
+  - **Phase 1: Megastarmie full policy（等用戶指示開始）**
+  - Phase 2: Alakazam full policy
+  - Phase 3: Trevenant full policy
+- **`docs/imitation_learning_pipeline.md` 是廢案**（Agent 搞錯方向寫的），不要參考。
 - **6-22 SHIPPED (5/5 subs USED). Latest 2 scored = `megastarmie` (#5, NEW) + Dragapult fix-v2 (778.5).** Scores accrue after next reset (UTC 00:00 / TW 08:00) — **CHECK THEM** (`venv/bin/kaggle competitions submissions pokemon-tcg-ai-battle`).
 - **`agents/megastarmie/` — Mega Starmie ex + Cinderace (NEW 6-22, a CLONE of ladder #1 `keidroid`, Elo 1341.9 — huge gap to #2 ~930).** keidroid real-ladder (6-21, 116 games): **67% overall, vs Trevenant 76% / vs Dragapult 64% / vs Alakazam ~even** — it hard-counters the field's two biggest decks. Our pilot, after divergence-mining keidroid's games: **cabt vs our agents (80-game samples) = Dragapult 56% / Alakazam 56% / Trevenant 84%** — beats all three (earlier 66/68/85 were noisy 40-game reads; 40-game cabt swings ±~10pts, always confirm at ≥80). See the deck section below + memory `megastarmie_deck.md`. **NOT yet validated on real ladder — that's the only true judge (score at TW 08:00 6-23).** Refactored 6-23 onto the shared `BasePolicy` (see Repo layout); behavior-preserving (Trevenant matchup unchanged 84≈85) and `tools/check_agent.py` passes (0 over-fill/fallback).
   - **6-22 PILOT FIXES (divergence-driven, all measured vs keidroid):** (1) **IS_FIRST → go FIRST** (he's 27/27 — DECK-SPECIFIC, opposite of Dragapult's go-second); (2) **spread/`DAMAGE` targeting → snipe the opp's LOW-HP engine pieces** (Dunsparce/Phantump/Abra draw-engines & evolution bases), NOT a high-HP wall (Hop's Snorlax 150HP we can't KO) — agree **27%→99%**; (3) **Ignition Energy is a one-shot Nebula ENABLER, not build-up** (it is DISCARDED end-of-turn) → only attach it to an ACTIVE Mega that attacks THIS turn; **build with permanent Water** (Jetting Blow at 1 {W} is the workhorse) — this fix flipped Alakazam 50%→68%; (4) **DISCARD** dumps excess Water, NEVER the win-con (we were pitching Mega Starmie ex/Salvatore); (5) MULLIGAN→NO, handle EVOLVES_TO.
