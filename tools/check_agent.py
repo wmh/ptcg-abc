@@ -143,6 +143,14 @@ def main():
                         if area is None or ii is None:
                             continue
                         player = obs.current.players[pi]
+                        # ATTACH options also cover TOOLS (Hero's Cape / Power Weight) — only
+                        # an ENERGY source can over-fill; skip non-energy sources.
+                        src_i = getattr(o, 'index', None)
+                        if src_i is not None and player.hand and 0 <= src_i < len(player.hand):
+                            src_card = CARD.get(getattr(player.hand[src_i], 'id', None))
+                            if src_card is not None and src_card.cardType not in (
+                                    CardType.BASIC_ENERGY, CardType.SPECIAL_ENERGY):
+                                continue
                         seq = player.active if area == AreaType.ACTIVE else player.bench
                         tgt = seq[ii] if (seq and 0 <= ii < len(seq)) else None
                         if not isinstance(tgt, Pokemon):
