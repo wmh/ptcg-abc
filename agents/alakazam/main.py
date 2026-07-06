@@ -17,8 +17,9 @@ class C:
     ALAKAZAM_PSY = 245    # Stage2 TECH (1x): Psychic = 10 + 50/energy on opp Active.
                           # It does DAMAGE (not counters) -> bypasses Mist Energy; punishes
                           # energy-loaded ex. Our answer to Mist decks (Dragapult/Crustle).
-    DUNSPARCE = 65        # Basic -> Dudunsparce (id65 = the top-pilot consensus printing; id305
-                          # is the other Dunsparce printing — both evolve into Dudunsparce 66)
+    DUNSPARCE = 305       # Basic -> Dudunsparce (7-06: switched to id305 per ladder-#1 Majkel1337's
+                          # list — 70HP + Trading Places free switch; the attack-id constants
+                          # 423/424 below always belonged to THIS printing, not id65)
     DUDUNSPARCE = 66      # Stage1 draw engine (Run Away Draw)
     PSYDUCK = 858         # Damp (ability lock tech)
     SHAYMIN = 343         # Flower Curtain (protect non-Rule-Box bench)
@@ -582,8 +583,16 @@ class AlakazamPolicy:
     def _score_play_poke(self, card):
         cid = card.id; n = self.field[cid]
         if cid == C.ABRA:
+            # Majkel (7-05, 7275 MAIN decisions): moderate bench — our #1 over-pick was
+            # flooding bodies (PLAY:Dunsparce 548x / Abra 152x). 3 line bodies is plenty.
+            line = (self.field[C.ABRA] + self.field[C.KADABRA]
+                    + self.field[C.ALAKAZAM] + self.field[C.ALAKAZAM_PSY])
+            if line >= 3:
+                return 1500
             return 20000 - 250 * n
         if cid == C.DUNSPARCE:
+            if self.field[C.DUNSPARCE] + self.field[C.DUDUNSPARCE] >= 2:
+                return 1200   # cap at 2 engine bodies (Majkel replays them freely up to that)
             return 18500 - 250 * n
         if cid == C.SHAYMIN:
             # Flower Curtain protects the bench from attack damage -> bench it ONLY vs a
@@ -621,6 +630,16 @@ class AlakazamPolicy:
         a = self.me.active[0] if self.me.active else None
         return (a is not None and a.id in ALAKAZAM_IDS and self._energy_count(a) >= 1) or self._bench_attacker_ready()
 
+    def _lethal_now(self):
+        """Powerful Hand KOs the opp Active with the CURRENT hand and a ready active attacker.
+        Majkel's line: once lethal, STOP developing (every card played from hand = -20 damage)
+        and attack — we over-sequenced plays before attacking (EVOLVE:Kadabra 874x over-pick)."""
+        opp = self.opponent.active[0] if self.opponent.active else None
+        a = self.me.active[0] if self.me.active else None
+        return (opp is not None and a is not None and a.id in ALAKAZAM_IDS
+                and self._energy_count(a) >= 1 and not self._effect_prevented(opp)
+                and 20 * self.me.handCount >= opp.hp)
+
     def _ko_active_reachable(self):
         """Can Powerful Hand KO the opponent's ACTIVE this turn — now, or after the
         drawing still available to us? (Each turn, aim to KO the best target: usually
@@ -635,6 +654,11 @@ class AlakazamPolicy:
         ready = self._alakazam_ready()
         if cid == C.RARE_CANDY:
             if self.field[C.ABRA] >= 1 and self.hand[C.ALAKAZAM] >= 1:
+                # Majkel: step-evolve through Kadabra when possible — its Psychic Draw (+3
+                # cards) beats the Candy skip (we over-played Candy 341x). Candy is for
+                # when the Kadabra bridge is missing.
+                if self.hand[C.KADABRA] >= 1:
+                    return 8000   # prefer the Kadabra bridge, but Candy is still fine tempo
                 return 20500
             return -1
         opp_active = self.opponent.active[0] if self.opponent.active else None
@@ -651,17 +675,25 @@ class AlakazamPolicy:
                 return -1
             if draw_for_ko:
                 return 14000
-            return 12500 if self._need_pieces() else 3000
+            return 12500 if self._need_pieces() else 5000
         if cid == C.DAWN:
             if self.state.supporterPlayed:
                 return -1
             if draw_for_ko:
                 return 13800
-            return 12000 if self._need_pieces() else 2500
+            # Majkel plays Dawn broadly (214x divergent) — +3 hand = +60 Powerful Hand
+            return 12000 if self._need_pieces() else 7500
         if cid == C.BUDDY_POFFIN:
-            return 13000 if self._open_bench() else 600
+            bodies = (self.field[C.ABRA] + self.field[C.KADABRA] + self.field[C.ALAKAZAM]
+                      + self.field[C.ALAKAZAM_PSY] + self.field[C.DUNSPARCE]
+                      + self.field[C.DUDUNSPARCE])
+            if bodies >= 4 or not self._open_bench():
+                return 600   # board is set — a Poffin now is -20 Powerful Hand for nothing
+            return 13000
         if cid == C.POKE_PAD:
-            return 8500 if self._need_pieces() else 400
+            # Majkel keeps digging with it after setup too — every deck→hand card
+            # is +20 Powerful Hand (but below Poffin/supporters)
+            return 8500 if self._need_pieces() else 3500
         if cid == C.BOSS_ORDERS:
             if self.state.supporterPlayed:
                 return -1
@@ -689,16 +721,21 @@ class AlakazamPolicy:
                    and card_table[e.id].cardType == CardType.SPECIAL_ENERGY
                    for p in (self.opponent.active + self.opponent.bench) if p is not None
                    for e in (getattr(p, 'energyCards', None) or [])):
-                return 1500
+                return 8000   # Majkel hammers special energy on sight (156x divergent)
             return -1
         if cid == C.BATTLE_CAGE:
             if self.state.stadiumPlayed or self.stadium_id == C.BATTLE_CAGE:
                 return -1
-            return 9500
+            # 1 copy in the Majkel list — hold it for bench-damage matchups (Grimmsnarl's
+            # Shadow Bullet / Munkidori), don't burn it on sight (225x over-pick)
+            return 6500 if self._opp_threatens_bench() else 1500
         if cid == C.LUCKY_HELMET:
             return 7000 if not ready else 1000
         if cid == C.NIGHT_STRETCHER:
-            return 6000 if (self.discard.get(C.ALAKAZAM, 0) or self.discard.get(C.ABRA, 0)) else 300
+            recoverable = (self.discard.get(C.ALAKAZAM, 0) or self.discard.get(C.ABRA, 0)
+                           or self.discard.get(C.KADABRA, 0) or self.discard.get(C.DUNSPARCE, 0)
+                           or self.discard.get(C.PSYCHIC_ENERGY, 0))
+            return 6000 if recoverable else 300
         if cid == C.LANA_AID:
             if self.state.supporterPlayed:
                 return -1
@@ -727,9 +764,15 @@ class AlakazamPolicy:
                 return 21500
             return 20400
         if cid == C.ALAKAZAM:
-            return 21000
+            # One attacking Alakazam at a time — each extra evolve burns a hand card
+            # (-20 Powerful Hand). Majkel does evolve the ACTIVE Kadabra (fresh attacker)
+            # even with one Alakazam up, but doesn't stack bench Alakazams.
+            have = self.field[C.ALAKAZAM] + self.field[C.ALAKAZAM_PSY]
+            if have == 0 or o.inPlayArea == AreaType.ACTIVE:
+                return 21000
+            return 4000
         if cid == C.KADABRA:
-            return 20000
+            return 20000   # Psychic Draw +3 — always worth it
         if cid == C.DUDUNSPARCE:
             return 19000
         return 18000
@@ -903,9 +946,9 @@ class AlakazamPolicy:
             return 0
         cid = card.id; n = self.field[cid]
         if cid == C.ABRA:
-            return 200 - 30 * n
+            return 200 - 30 * n   # Majkel benches Abra over Dunsparce ~3:1
         if cid == C.DUNSPARCE:
-            return 180 - 30 * n
+            return 140 - 30 * n
         if cid == C.SHAYMIN:
             return 150 if (n == 0 and self._opp_threatens_bench()) else -1
         if cid == C.PSYDUCK:
@@ -917,19 +960,22 @@ class AlakazamPolicy:
             return 0
         cid = card.id
         score = 200 - self.hand[cid] * 40
-        # Top pilots search the DRAW ENGINE (Dudunsparce) and the cheap evolution basics first,
-        # and DON'T hoard the stage-2 Alakazam (one is enough; it's dead without Kadabra+Candy).
+        # Majkel (7-05, TO_HAND 1503 decisions): grab the ALAKAZAM LINE (Abra/Kadabra/
+        # Alakazam, his 634 picks) — do NOT hoard Dudunsparce (our 379x over-grab; the
+        # engine shuffles itself back and re-benching is cheap).
         engine_online = self.field[C.DUDUNSPARCE] >= 1
         if cid == C.DUDUNSPARCE:
-            score += 90 if not engine_online else 20    # get the draw engine online
+            score += 90 if not engine_online else -10
         elif cid == C.DUNSPARCE:
             score += 70 if self.field[C.DUDUNSPARCE] + self.field[C.DUNSPARCE] < 1 else -10
         elif cid == C.ABRA:
-            score += 55 if self.field[C.ALAKAZAM] + self.field[C.KADABRA] + self.field[C.ABRA] < 2 else -10
+            score += 85 if self.field[C.ALAKAZAM] + self.field[C.KADABRA] + self.field[C.ABRA] < 3 else 10
         elif cid == C.KADABRA:
-            score += 45
+            score += 80
         elif cid == C.ALAKAZAM:
-            score += 50 if (self.hand[C.ALAKAZAM] == 0 and self.field[C.ABRA] + self.field[C.KADABRA] >= 1) else -10
+            score += 75 if self.hand[C.ALAKAZAM] == 0 else 15
+        elif cid == C.ENRICHING_ENERGY:
+            score += 65   # ACE SPEC — Majkel grabs it 54x vs our 1x
         elif is_energy(cid):
             # When starved, fetch a {P} energy (the only kind that fuels our attacks) — an
             # Enriching (Colorless) doesn't help, so don't prioritise it.
@@ -954,12 +1000,15 @@ class AlakazamPolicy:
         return 0
 
     def _score_putback(self, card):
+        # TO_DECK (Majkel agree 2%→): return SPARE line pieces to the deck freely — they're
+        # re-searchable (Dawn/Poké Pad/Hilda); only protect a piece the board still lacks.
         if card is None:
             return 0
-        if self.hand[card.id] >= 2:
-            return 60
-        if card.id in (C.ABRA, C.ALAKAZAM, C.DUNSPARCE):
-            return -40
+        cid = card.id
+        if self.hand[cid] >= 2:
+            return 70
+        if cid in (C.ABRA, C.KADABRA, C.ALAKAZAM, C.DUNSPARCE, C.DUDUNSPARCE):
+            return -40 if self.field[cid] == 0 else 60
         return 10
 
 

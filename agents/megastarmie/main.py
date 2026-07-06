@@ -106,6 +106,16 @@ class MegaStarmiePolicy(BasePolicy):
             if p: opp_ids.add(p.id)
         for p in self.opponent.bench:
             if p: opp_ids.add(p.id)
+        if 646 in opp_ids or 647 in opp_ids or 648 in opp_ids:
+            return 'grimmsnarl'   # Marnie's line — bench-snipe + Munkidori counter-moving
+        if 756 in opp_ids:
+            return 'kangaskhan'   # megaEx colorless beatdown
+        if 379 in opp_ids or 381 in opp_ids or 341 in opp_ids:
+            return 'garchomp'     # Cynthia's — energy-hungry big hits
+        if 741 in opp_ids or 742 in opp_ids or 743 in opp_ids:
+            return 'alakazam'     # Powerful Hand engine, single [P] cost
+        if 117 in opp_ids or 96 in opp_ids or 116 in opp_ids:
+            return 'ogerpon'
         if 119 in opp_ids or 235 in opp_ids:
             return 'dragapult'
         if 878 in opp_ids:
@@ -152,9 +162,9 @@ class MegaStarmiePolicy(BasePolicy):
         # ── matchup awareness ──
         if not hasattr(self, '_archetype'):
             self._archetype = self._detect_archetype()
-            self._vs_spread = self._archetype in ('dragapult', 'froslass')
-            self._vs_aggro = self._archetype in ('lucario',)
-            self._vs_setup = self._archetype in ('mewtwo', 'trevenant')
+            self._vs_spread = self._archetype in ('dragapult', 'froslass', 'grimmsnarl')
+            self._vs_aggro = self._archetype in ('lucario', 'kangaskhan', 'ogerpon')
+            self._vs_setup = self._archetype in ('mewtwo', 'trevenant', 'garchomp', 'alakazam')
 
     def _build_attack_plan(self):
         """plan_a = best attack + target for KO, matchup-aware.
@@ -269,13 +279,13 @@ class MegaStarmiePolicy(BasePolicy):
 
         # ── Pokémon ──
         if cid == C.STARYU:
-            if self.mega_line_count + self.hand[C.STARYU] >= 4:
-                return 1000    # enough
+            # Yushin (7-04/05 divergence): SMALL bench — never flood Staryu; each extra body
+            # is a bench-snipe/gust target (Grimmsnarl Shadow Bullet, Munkidori) and a free prize.
             if self.mega_line_count == 0:
                 return 20000   # need first body
             if self.mega_line_count == 1:
-                return 15000   # want 2nd
-            return 5000         # 3rd is ok
+                return 9000    # a 2nd body is fine
+            return 600          # 3rd+ is a liability, not depth
         if cid == C.MEGA_STARMIE:
             if self.staryu_on_board and self.mega_in_hand == 0:
                 return 38000   # ready to evolve
@@ -316,13 +326,16 @@ class MegaStarmiePolicy(BasePolicy):
         if cid == C.MEGA_SIGNAL:
             if self.copies_in_deck(C.MEGA_STARMIE) == 0:
                 return 150     # all prized/used -> whiff
-            if self.staryu_on_board and not self.mega_in_hand and not self.mega_on_board:
-                return 14000   # ready to evolve, need the Mega
-            if self.mega_in_hand or self.mega_on_board:
+            if self.mega_in_hand:
                 return 200
-            return 6000         # search when we eventually need it
+            if self.staryu_on_board and not self.mega_on_board:
+                return 14000   # ready to evolve, need the Mega
+            if self.mega_on_board:
+                return 3000 if self.field[C.STARYU] else 500   # 2nd Mega only w/ a base ready
+            return 8000         # no Mega anywhere: dig for it
         if cid == C.SALVATORE:
-            if self.staryu_on_board and self.mega_in_hand and not self.mega_on_board:
+            # Yushin: also used to evolve the SECOND Staryu while a Mega is already up.
+            if self.staryu_on_board and self.mega_in_hand:
                 return 15000   # instant evolve THIS turn
             return 200
         if cid == C.NIGHT_STRETCHER:
@@ -334,18 +347,25 @@ class MegaStarmiePolicy(BasePolicy):
             if (self.basic_emergency and self.copies_in_deck(C.STARYU) != 0
                     and self.safe_pitch_count() >= 2):
                 return 18000
-            need = (not self.mega_on_board and self.discard_count >= 2)
-            return 8000 if need else 1000
+            # Yushin barely plays it outside emergencies (109 over-picks on 7-04) — the
+            # 2-card pitch costs more than the search is worth once the line is moving.
+            need = (not self.mega_on_board and not self.mega_in_hand
+                    and self.safe_pitch_count() >= 2)
+            return 4000 if need else 800
         if cid == C.POKEGEAR:
             if self.state.supporterPlayed:
                 return 500
-            return 7000
+            has_supporter = any(c.id in (C.WALLY, C.HILDA, C.LILLIE, C.HARLEQUIN, C.BOSS)
+                                for c in self.me.hand)
+            return 6500 if has_supporter else 9000  # dig for the turn's supporter first
 
         # ── Draw / refill supporters ──
         if cid in (C.LILLIE, C.HARLEQUIN):
+            # Yushin (7-04: our #1 over-pick, 204x Lillie): blind shuffle-draw is his LAST
+            # resort — Hilda/Pokégear/Mega Signal (targeted search) come first.
             if self.state.supporterPlayed:
                 return UNNECESSARY
-            base = 9000 if cid == C.LILLIE else 6000
+            base = 5500 if cid == C.LILLIE else 3500
             if self.basic_emergency:
                 base = max(base, 12000)   # fallback dig for a Basic when nothing else fetches one
             if self.me.handCount <= 3:
@@ -363,21 +383,23 @@ class MegaStarmiePolicy(BasePolicy):
                                # must never outrank a Basic-fetcher (Buddy/Ultra/Lillie)
             if not self.mega_on_board and (self.mega_in_hand or self.hand[C.STARYU]):
                 return 11000   # search evolution + energy
-            return 6000         # still decent draw
+            return 7500         # guaranteed Mega/Cinderace + energy > blind Lillie draw
 
         # ── Disruption / recovery ──
         if cid == C.CRUSHING_HAMMER:
             if self.opp is None or len(self.opp.energies) == 0:
                 return 100
-            # vs_setup: deny energy is critical (Mewtwo/Trevenant need specific energy)
+            # vs_setup: deny energy is critical (Garchomp/Alakazam need specific energy)
             if vs_setup and len(self.opp.energies) >= 1:
                 return 6000
-            if vs_spread:
-                return 2000     # spread decks use cheap attacks, less impactful
+            if vs_spread and self._archetype != 'grimmsnarl':
+                return 2000     # true spread decks use cheap attacks, less impactful
+            # Yushin hammers a lot INCLUDING vs Grimmsnarl (denies this turn's [DD] Shadow
+            # Bullet even though Punk Up can reflood on the next evolve)
             if self.have_ready_attacker():
-                return 4500
+                return 6000
             if len(self.opp.energies) >= 2:
-                return 3500
+                return 5000
             return 200
         if cid == C.BOSS:
             if self.state.supporterPlayed:
@@ -389,11 +411,17 @@ class MegaStarmiePolicy(BasePolicy):
 
         # ── Healing / defense ──
         if cid == C.WALLY:
+            # Wally pulls the Mega's energy back to HAND. Yushin's line: Wally the active,
+            # RE-ATTACH one Water (Jetting Blow needs only 1), attack anyway — full heal at
+            # zero tempo IF this turn's attach is still available. If we already attached,
+            # healing the active costs the attack — skip.
             if self.mega_on_board:
-                bonus = 3000 if vs_aggro else 0  # more urgent vs Lucario
+                bonus = 3000 if vs_aggro else 0  # more urgent vs big hitters
                 for p in self.my_board():
                     if p is not None and p.id == C.MEGA_STARMIE and (p.maxHp - p.hp) >= 120:
-                        return 16000 + bonus
+                        if p is self.active and self.can_attack(p) and self.state.energyAttached:
+                            return 300   # attach spent -> can't re-arm -> would forfeit attack
+                        return 14000 + bonus
             return 200
         if cid == C.HEROS_CAPE:
             bonus = 2000 if vs_aggro else 0  # +100HP critical vs Lucario
@@ -425,6 +453,32 @@ class MegaStarmiePolicy(BasePolicy):
         self._collect()   # refresh state (opp, active, plan_a, plan_b, etc.)
         return super().score(o)
 
+    # ── Multi-select caps (normalize_selection takes ALL positive options; Yushin doesn't) ──
+    def choose(self):
+        out = super().choose()
+        try:
+            if not out or len(out) <= 1:
+                return out
+            minc = max(0, self.select.minCount)
+            if self.context == SelectContext.TO_BENCH:
+                # Yushin 179/183 (7-04+05): bench ONE Staryu per Poffin, even on an empty
+                # bench T1 — every extra body is a bench-snipe/gust target.
+                out = out[:max(minc, 1)]
+            elif self.context == SelectContext.ATTACH_TO:
+                # Turbo Flare energy pick (he takes 1, we took 3): fetch only what the board
+                # actually needs — surplus energy on bodies is prize-trade liability and
+                # drains the deck's Water for later Turbo Flares.
+                o0 = self.select.option[out[0]]
+                first = get_card(self.obs, o0.area, o0.index, o0.playerIndex)
+                if first is not None and not isinstance(first, Pokemon) and self.is_energy(first.id):
+                    needed = sum(1 for p in self.my_board()
+                                 if p is not None and self.should_fuel(p)
+                                 and self.attach_helps(p, None))
+                    out = out[:max(minc, min(len(out), max(needed, 1)))]
+        except Exception:
+            pass
+        return out
+
     # ── Override score_play to use hand_score in MAIN context ────────────────
     def score_play(self, o):
         card = get_card(self.obs, AreaType.HAND, o.index, self.my_index)
@@ -447,6 +501,17 @@ class MegaStarmiePolicy(BasePolicy):
         src = get_card(self.obs, AreaType.HAND, o.index, self.my_index)
         is_active = o.inPlayArea == AreaType.ACTIVE
 
+        if src is not None and src.id == C.HEROS_CAPE:
+            # Tools must NOT be gated by energy should_fuel (base would refuse a fueled Mega).
+            # Yushin: Cape goes on the Mega line (330→430 wall), never on Cinderace.
+            if p.tools:
+                return -1
+            if p.id == C.MEGA_STARMIE:
+                return 8000 + (300 if is_active else 0)
+            if p.id == C.STARYU:
+                return 5000   # persists through evolution
+            return -1
+
         if src is not None and src.id == C.IGNITION_ENERGY:
             # Ignition: one-shot Nebula ENABLER, never build-up
             if not (is_active and p.id == C.MEGA_STARMIE):
@@ -464,21 +529,29 @@ class MegaStarmiePolicy(BasePolicy):
         return super().score_attach(o)
 
     def attach_priority(self, p, is_active):
+        # Yushin: energy goes to the MEGA LINE (Mega > Staryu-about-to-evolve); Cinderace
+        # gets one only when it's the active and must Turbo Flare (should_fuel gates that).
         concentrate = self.energy_count(p) * 600
         if p.id == C.MEGA_STARMIE:
             return 9000 + concentrate + (300 if is_active else 0)
-        if p.id == C.CINDERACE:
-            return 6000 + concentrate + (200 if is_active else 0)
         if p.id == C.STARYU:
-            return 1500 + concentrate
+            return 5500 + concentrate
+        if p.id == C.CINDERACE:
+            return (5000 if is_active else 1200) + concentrate
         return -1
 
     # ── ABILITY ───────────────────────────────────────────────────────────────
     def score_ability(self, o):
         card = get_card(self.obs, o.area, o.index, self.my_index)
         if card is not None and card.id == C.CINDERACE:
-            return 12000   # Explosiveness: open face-down
-        return 9000
+            # Explosiveness: essential for the FIRST Cinderace; a 2nd body is fine with
+            # bench room; 3rd+ is bench-snipe fodder (7-04: 135x over-pick, then 90x under).
+            if self.cinderace_count == 0:
+                return 12000
+            if self.cinderace_count == 1 and self.open_bench:
+                return 6000
+            return 1200
+        return 4000
 
     # ── RETREAT ────────────────────────────────────────────────────────────────
     def score_retreat(self):
@@ -492,6 +565,12 @@ class MegaStarmiePolicy(BasePolicy):
                 for p in self.me.bench)
             if ready_mega_on_bench:
                 return 7000
+        # A non-attacker up front while a Mega/Cinderace is ready on the bench: get it out
+        # (Yushin retreats ~2x as often as we did; 64 divergent RETREATs on 7-04)
+        if active.id in (C.STARYU, C.MEOWTH_EX):
+            for p in self.me.bench:
+                if p is not None and p.id in self.ATTACKER_IDS and self.can_attack(p):
+                    return 6500
         # Generic retreat: can't attack and bench has a ready attacker
         if not self.can_attack(active) and self.bench_attacker_ready():
             return 6000
@@ -588,6 +667,10 @@ class MegaStarmiePolicy(BasePolicy):
         # Jetting Blow 50-spread KO zone (bench targets only)
         if 0 < hp <= 50:
             sc += 2000
+            # Yushin: exact-KO the evolution BASE (Abra over a damaged Kadabra) — kills the
+            # line's future, not just the current stage
+            if d is not None and not d.evolvesFrom:
+                sc += 1200
 
         # Near-death finish
         if hp <= 30:
@@ -667,33 +750,55 @@ class MegaStarmiePolicy(BasePolicy):
         elif cid == C.STARYU:
             score += 70 if self.field[C.STARYU] + self.hand[C.STARYU] < 2 else -10
         elif cid == C.CINDERACE:
-            score += 50
+            score += 15   # Yushin grabs Mega/Water, not spare Cinderace
         elif cid == C.MEOWTH_EX:
             score += 60 if self.field[C.MEOWTH_EX] == 0 else 10
         elif self.is_energy(cid):
+            # Yushin recovers permanent Water (the Jetting Blow fuel), not one-shot Ignition
             need_fuel = any(p is not None and p.id == C.MEGA_STARMIE and self.should_fuel(p)
                             for p in self.my_board())
-            score += 250 if (need_fuel and cid == C.IGNITION_ENERGY) else 40
+            if cid == C.WATER_ENERGY:
+                score += 150 if need_fuel else 60
+            else:
+                score += 40
         return score
 
     def score_discard(self, card):
+        # Yushin's pitch order (7-04/05): situationally-DEAD trainers and Ignition go first;
+        # Basic Water is the 9-copy ATTACK FUEL, not the default pitch (we lost games broke).
         if card is None:
             return 0
         cid = card.id
         if cid == C.WATER_ENERGY:
-            return 80   # plentiful (9) -> preferred pitch
+            return 40 if self.hand[cid] >= 3 else -20   # keep at least a couple of fuel cards
         if cid == C.IGNITION_ENERGY:
-            return 30 if self.hand[cid] >= 2 else -30
+            return 55 if self.hand[cid] >= 2 else 25    # one-shot enabler, freely pitchable
         if self.is_energy(cid):
             return 40
         if cid == C.MEGA_STARMIE:
             return -200   # never pitch the win-con
         if cid == C.MEOWTH_EX:
             return -80 if self.field[C.MEOWTH_EX] == 0 else 20  # keep basic body
-        if cid in (C.STARYU, C.SALVATORE, C.MEGA_SIGNAL):
+        if cid == C.STARYU:
             return -100 if self.hand[cid] <= 1 else 0
+        if cid == C.SALVATORE:
+            # dead unless the evolve combo is live (Yushin pitched 7 on 7-04)
+            return -100 if (self.mega_in_hand and self.staryu_on_board) else 30
+        if cid == C.MEGA_SIGNAL:
+            return 30 if (self.mega_in_hand or self.copies_in_deck(C.MEGA_STARMIE) == 0) else -60
+        if cid == C.CRUSHING_HAMMER:
+            return 35 if (self.opp is None or len(self.opp.energies) == 0) else 10
+        if cid == C.WALLY:
+            damaged_mega = any(p is not None and p.id == C.MEGA_STARMIE and (p.maxHp - p.hp) >= 120
+                               for p in self.my_board())
+            return -40 if damaged_mega else 40
+        if cid == C.BUDDY_POFFIN:
+            return 35 if self.mega_line_count >= 2 else -40
+        if cid == C.NIGHT_STRETCHER:
+            has_target = self.discard.get(C.MEGA_STARMIE, 0) or self.discard.get(C.STARYU, 0)
+            return 10 if has_target else 30
         if cid in (C.LILLIE, C.HARLEQUIN):
-            return -60 if self.hand[cid] <= 1 else 20   # don't pitch our draw engine (e.g. to Ultra Ball)
+            return -60 if self.hand[cid] <= 1 else 25   # don't pitch our draw engine (e.g. to Ultra Ball)
         if cid == C.CINDERACE:
             return -40 if self.field[cid] == 0 else 10
         if self.hand[cid] >= 2:

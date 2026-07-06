@@ -2,15 +2,16 @@
 
 The old cabt opponents (crustle/lucario/abomasnow) are extinct in the live meta, which is a prime
 reason cabt mispredicts the ladder. This gauntlet pits our agent against the ACTUAL top-tier field
-(Elo>=1048, from 6-21 episodes):
+(Elo>=1000, from 7-05 episodes — the meta flipped completely ~6-28→7-01):
 
-    Hop's Trevenant 41.5% | Alakazam 28.7% | Dragapult 8.6% | Mega Lucario 7.7%
-    Chandelure 3.0% | Cinderace/Mega Starmie 1.9% | Mega Froslass 1.8% | Mewtwo ex 0.9%
+    Marnie's Grimmsnarl ex 38.6% | Alakazam(741 non-ex) 17.5% | Mega Kangaskhan ex 11.6%
+    Cynthia's Garchomp ex 10.4% | Cornerstone Ogerpon ex 6.7% | Dusknoir 3.7% | Cinderace 2.0%
 
-Opponents are our own tuned agents where we have them (Trevenant/Alakazam/Dragapult/Megastarmie),
-the shared Lucario-v3 community pilot, and GenericPolicy-piloted consensus decks for the high-WR
-techs we don't pilot (Chandelure/Froslass/Mewtwo). Games are allocated proportional to field share;
-reports per-opponent win-rate plus a single prevalence-WEIGHTED overall.
+Opponents are our own tuned agents where we have them (Alakazam), and GenericPolicy-piloted
+top-player decklists for the new-meta decks (grimmsnarl=iwashi, garchomp=nasuo445,
+kangaskhan=zoroark190, ogerpon=btk15049 — all pulled from 7-05 episodes, Elo>=1000).
+Games are allocated proportional to field share; reports per-opponent win-rate plus a single
+prevalence-WEIGHTED overall.
 
 Usage: venv/bin/python tools/cabt_gauntlet.py agents/<dir> [total_games]
 """
@@ -24,16 +25,16 @@ os.chdir(ROOT)
 sys.path.insert(0, ROOT + '/docs/official/models/cg-lib')
 sys.path.insert(0, ROOT + '/agents/_base')
 
-# field share (%) in the Elo>=1048 top tier (6-21). Opponent kind: 'agent' = a main.py dir,
+# field share (%) in the Elo>=1000 top tier (7-05). Opponent kind: 'agent' = a main.py dir,
 # 'generic' = a deck.csv piloted by GenericPolicy.
-# THE 5 OPPONENTS = the 5 most-prevalent top-tier decks (~90% of the Elo>=1048 field).
-# (Froslass/Mewtwo/MegaStarmie-mirror are kept as agents but out of the core gauntlet for now.)
+# THE 5 OPPONENTS = the 5 most-prevalent top-tier decks (~85% of the Elo>=1000 field).
+# (Old-meta opponents Trevenant/Dragapult/Lucario-v3/Chandelure dropped — extinct on the ladder.)
 FIELD = [
-    ('Trevenant',  41.5, 'agent',   'agents/trevenant'),
-    ('Alakazam',   28.7, 'agent',   'agents/alakazam'),
-    ('Dragapult',   8.6, 'agent',   'agents/dragapult'),
-    ('Lucario-v3',  7.7, 'agent',   'agents/lucario_v3'),
-    ('Chandelure',  3.0, 'generic', 'agents/chandelure'),
+    ('Grimmsnarl', 38.6, 'generic', 'agents/grimmsnarl'),
+    ('Alakazam',   17.5, 'agent',   'agents/alakazam'),
+    ('Kangaskhan', 11.6, 'generic', 'agents/kangaskhan'),
+    ('Garchomp',   10.4, 'generic', 'agents/garchomp'),
+    ('Ogerpon',     6.7, 'generic', 'agents/ogerpon'),
 ]
 
 

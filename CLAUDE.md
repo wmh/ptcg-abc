@@ -15,7 +15,18 @@ Goal: build an `agent(obs_dict)` that wins the standard-format card battle. Two 
 - **Strategy report**: `pokemon-tcg-ai-battle-challenge-strategy` ($240K). Deadline **2026-09-13**.
 - 5 submissions/day; latest 2 are scored.
 
-## Current status (2026-06-25 — megastarmie Hilda no-Basic fix SHIPPED)
+## Current status (2026-07-06 — META 大翻盤盤點；megastarmie v2 + Alakazam-741 已提交（用戶「如擬」核准）)
+
+- **7-06 SHIPPED 2/5：megastarmie piloting v2（09:36 UTC）+ Alakazam-741（09:36 UTC）— 最新 2 計分 = 這一對。等 TW 08:00（UTC 00:00）後查分：`venv/bin/kaggle competitions submissions pokemon-tcg-ai-battle`。**
+
+- **7-06 盤點：我們停擺 11 天（最後提交 6-25），meta 在 6-28~7-01 全面翻盤。** 「夯」= 833.8 / #820 / 4354；**7-05 全天 0 場對局 — 不重新提交就不再排賽，分數凍結**。頂端壓縮：#1 Majkel1337 1243.9（用**非ex Alakazam 741線** = 我們 alakazam 牌表重疊 50/60）；rank 100 = 984.7（差我們 ~150）。keidroid 崩到 #2915。
+- **新 meta（Elo≥1000, 7-05）：Grimmsnarl ex 38.6%/50.6% 新霸主、Alakazam-741 17.5%/52.3%、Kangaskhan ex 11.6%/56.9%（剋 Grimmsnarl 82%）、Cynthia's Garchomp ex 10.4%/60.1%（全場最高、剋兩大頭 → Phase 3 目標）。** 全是原有卡池被挖掘的牌組，本地 cg-lib 全認得（max id 1267）。詳見 memory `card_mechanics_reference.md` 新 meta 段 + `docs/strategy/牌組策略.md`。
+- **megastarmie 沒死：#2 Yushin Ito（1172.6）牌表與我們 60/60 相同 → 純駕駛差。7-06 已 divergence-mine 他 7-04+7-05 共 ~5400 個 MAIN 決策，megastarmie 駕駛 v2 完成（未提交）**：小板凳（Poffin 只上 1 隻 Staryu, TO_BENCH agree 3→97%）、Turbo Flare 只拿板面需要的能量（ATTACH_TO 0→55%）、**DISCARD 反轉：先丟死卡訓練家/Ignition,保護水能量**（舊規則「先丟水」是錯的）、Wally 回血後重貼 1 水照樣攻擊、Hero's Cape 修 bug（工具被能量閘門擋住貼不到有能量的 Mega）、Hammer 加量（對 Grimmsnarl 也打）、狙擊進化基底（Abra>受傷 Kadabra）。Hold-out 7-05 全面改善（MAIN 55→59%）；check_agent PASS；鏡像 A/B 160 場 ≈49%（無退步）；新 gauntlet 87.6%（舊版 88.4%,同級）。
+- **7-06 新對手池**：`agents/{grimmsnarl,garchomp,kangaskhan,ogerpon}` = 頂級玩家牌表 + GenericPolicy；`cabt_gauntlet.py` FIELD 已改成 7-05 top-tier 權重。
+- **7-06 Phase 2 完成：alakazam 換 Majkel1337 牌表**（Dunsparce 305 版修正了本來就對應 305 招式 ID 的舊代碼、+1 Enriching、4th Alakazam/Candy/Enhanced Hammer、3 Night Stretcher、Battle Cage 4→1）**+ mine 他 7275 個 MAIN 決策**：板凳節制（線件≥3 停）、Candy 讓路 Kadabra 橋（Psychic Draw +3）、不疊板凳胡地（前排可以）、TO_HAND 抓線件不囤 Dudunsparce（50→57%）、TO_DECK 大方放回備用件（2→12%）、TO_BENCH Abra 優先（70→77%）、Battle Cage 留給 bench-damage 對局、Enhanced Hammer 見特能就打。**驗證：新 gauntlet 75.1% vs 舊 63.5%（vs Grimmsnarl 62→75%），新舊鏡像新版 68% 勝。** check_agent PASS。⚠ MAIN pointwise agree 45→42%（回合內排序 cascade 噪音，行為裁判以 gauntlet 為準）；⚠ 斬殺閘門實驗失敗已回退（手牌×20 中盤隨時「有斬殺」，把發展全壓死 → MAIN 33%）。**仍是 legacy 架構未遷 BasePolicy（check_agent 能量審核過,擇機再遷）。**
+- **下一步：(1) TW 08:00 查這對的分數（真天梯是唯一裁判）；(2) Phase 3 = 從零建 Cynthia's Garchomp（nasuo445 牌表已在 agents/garchomp/deck.csv,他單日 746 場可挖）；(3) 每日 autopsy。**
+
+## Previous status (2026-06-25 — megastarmie Hilda no-Basic fix SHIPPED)
 
 - **6-25 SHIPPED (用戶明確指示提交): `agents/megastarmie` — 修「無基礎緊急狀態」選牌 bug。** 實戰發現：手牌+板凳都沒基礎、場上只剩一隻 Mega Starmie 當前鋒時，agent 打 **Hilda**(只能搜進化、搜不到基礎)拿了張死卡 → 前鋒被 KO 直接輸。修法(只在 `basic_emergency` 觸發，不動正常分佈)：新增 `bench_body_count`/`basic_emergency` 旗標；**Buddy Poffin 20000 > Ultra Ball 18000(需 `safe_pitch_count()>=2` 才能安全棄 2 張) > Lillie 12000 ≫ Hilda 1500**；`score_discard` 保護 Lillie/Harlequin 不被自己的 Ultra Ball 丟掉。`check_agent` PASS(0 over-fill/fallback)。等 TW 08:00 後確認分數。
 - **6-25 上午改寫的 `agents/megastarmie` = Sample-Style 2.0 全策略版**(per-card hand_score + 攻擊規劃器 + HP-zone DAMAGE_COUNTER + Turbo Flare 三道煞車防過量填能)。`megastarmie_v2` 是改寫前的 BasePolicy 薄子類舊版(保留比對用)。`megastarmie_pokepad` 測試分支已刪。
@@ -45,6 +56,7 @@ Goal: build an `agent(obs_dict)` that wins the standard-format card battle. Two 
 - **NEW TOOL**: `tools/autopsy.py` — one-shot daily pipeline: download episodes + leaderboard → run meta_analyze + divergence_decode → save reports to `/tmp/autopsy/<date>/`.
 
 ## Meta — re-check EVERY day with `tools/autopsy.py` (the meta flips fast)
+**⚠ 7-06 SUPERSEDED: the entire section below is the OLD (6-21) meta — kept for trend only. Current meta = the 7-06 Current-status block above (Grimmsnarl/Alakazam-741/Kangaskhan/Garchomp) + `docs/strategy/牌組策略.md` + memory `card_mechanics_reference.md`.**
 **6-21 episodes (5046 decisive games) — META FLIPPED AGAIN: Dragapult ex surged, Trevenant's WR cratered, Lucario extinct.**
 TOP TIER (Elo≥1150, 1524 games):
 - **Hop's Trevenant 42.2% / 52.3% WR** — still most-played at the top but WR collapsed from 64.6% (6-20). The field adapted.
