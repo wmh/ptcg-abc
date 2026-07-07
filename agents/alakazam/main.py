@@ -450,16 +450,20 @@ class AlakazamPolicy:
             if getattr(d, 'stage2', 0):
                 s += 250
             elif getattr(d, 'stage1', 0):
-                s += 130
+                s += 350   # Morgrem/Gabite: deny the stage-2 boss it becomes (Majkel's picks)
         if p.id in (144, 322, 323, 337):     # Squawkabilly ex / Noctowl / Fan Rotom / Archaludon ex
             s -= 200
-        if p.id == 112 and len(p.energies) >= 1:   # Munkidori (key disruptor)
-            s += 300
+        if p.id == 112 and len(p.energies) >= 1:   # Munkidori — Majkel rarely gusts it
+            s += 100
         s += getattr(p, 'hp', 0)
         return s
 
     def _gust_value(self, p):
         d = self._active_best_dmg(p)
+        # Majkel gusts what the ACHIEVABLE Powerful Hand can KO (he pulls 210HP Ogerpon/Fez
+        # ex up and draws to 11+), not just what the current hand kills.
+        if self._have_attacker() and not self._effect_prevented(p):
+            d = max(d, 20 * self._achievable_hand())
         if d >= p.hp:
             if prize_count(p) >= len(self.me.prize):
                 return 90000        # KO-ing this wins the game — gust it
@@ -592,7 +596,7 @@ class AlakazamPolicy:
             return 20000 - 250 * n
         if cid == C.DUNSPARCE:
             if self.field[C.DUNSPARCE] + self.field[C.DUDUNSPARCE] >= 2:
-                return 1200   # cap at 2 engine bodies (Majkel replays them freely up to that)
+                return 1200   # cap at 2 engine bodies
             return 18500 - 250 * n
         if cid == C.SHAYMIN:
             # Flower Curtain protects the bench from attack damage -> bench it ONLY vs a
@@ -721,7 +725,7 @@ class AlakazamPolicy:
                    and card_table[e.id].cardType == CardType.SPECIAL_ENERGY
                    for p in (self.opponent.active + self.opponent.bench) if p is not None
                    for e in (getattr(p, 'energyCards', None) or [])):
-                return 8000   # Majkel hammers special energy on sight (156x divergent)
+                return 9500   # Majkel hammers special energy on sight (248x on 7-06)
             return -1
         if cid == C.BATTLE_CAGE:
             if self.state.stadiumPlayed or self.stadium_id == C.BATTLE_CAGE:
@@ -735,7 +739,7 @@ class AlakazamPolicy:
             recoverable = (self.discard.get(C.ALAKAZAM, 0) or self.discard.get(C.ABRA, 0)
                            or self.discard.get(C.KADABRA, 0) or self.discard.get(C.DUNSPARCE, 0)
                            or self.discard.get(C.PSYCHIC_ENERGY, 0))
-            return 6000 if recoverable else 300
+            return 7500 if recoverable else 300
         if cid == C.LANA_AID:
             if self.state.supporterPlayed:
                 return -1
@@ -772,7 +776,12 @@ class AlakazamPolicy:
                 return 21000
             return 4000
         if cid == C.KADABRA:
-            return 20000   # Psychic Draw +3 — always worth it
+            # JIT (Majkel 7-06: his 237 vs our 1120): evolve when BRIDGING to Alakazam or
+            # when the hand needs the +3 draw — otherwise the piece is safer in hand
+            # (on board it's Grimmsnarl-snipe/Froslass-chip bait, in hand it's +20 dmg).
+            if self.hand[C.ALAKAZAM] >= 1 or self.me.handCount <= 4                     or self.field[C.ALAKAZAM] + self.field[C.ALAKAZAM_PSY] == 0:
+                return 20000
+            return 6000
         if cid == C.DUDUNSPARCE:
             return 19000
         return 18000
@@ -878,6 +887,18 @@ class AlakazamPolicy:
                 return 10000 + prize_count(card) * 1000 - getattr(card, "hp", 0)
             return 0
         if ctx in (SelectContext.TO_DECK, SelectContext.TO_DECK_BOTTOM, SelectContext.TO_PRIZE):
+            # Sacred Ash (TO_DECK from the DISCARD pile): recycle ALL 5 slots with line
+            # pokemon — Majkel fills it (his 5-card picks vs our 3; TO_DECK agree 12%).
+            if getattr(o, 'area', None) == AreaType.DISCARD:
+                cid = card.id
+                if cid in (C.ABRA, C.KADABRA, C.ALAKAZAM, C.ALAKAZAM_PSY):
+                    return 90
+                if cid in (C.DUNSPARCE, C.DUDUNSPARCE):
+                    return 70
+                d = card_table.get(cid)
+                if d is not None and d.cardType == CardType.POKEMON:
+                    return 30
+                return 5
             return self._score_putback(card)
         return 0
 
@@ -965,7 +986,9 @@ class AlakazamPolicy:
         # engine shuffles itself back and re-benching is cheap).
         engine_online = self.field[C.DUDUNSPARCE] >= 1
         if cid == C.DUDUNSPARCE:
-            score += 90 if not engine_online else -10
+            # Majkel doesn't re-fetch the self-recycling engine (his 79 vs our 427 grabs) —
+            # the LINE pieces come first even when the engine is offline.
+            score += 45 if not engine_online else -10
         elif cid == C.DUNSPARCE:
             score += 70 if self.field[C.DUDUNSPARCE] + self.field[C.DUNSPARCE] < 1 else -10
         elif cid == C.ABRA:
@@ -973,7 +996,8 @@ class AlakazamPolicy:
         elif cid == C.KADABRA:
             score += 80
         elif cid == C.ALAKAZAM:
-            score += 75 if self.hand[C.ALAKAZAM] == 0 else 15
+            # his #1 grab (336x): spares feed Sacred Ash recycling & the 2nd attacker
+            score += 85 if self.hand[C.ALAKAZAM] == 0 else 40
         elif cid == C.ENRICHING_ENERGY:
             score += 65   # ACE SPEC — Majkel grabs it 54x vs our 1x
         elif is_energy(cid):
