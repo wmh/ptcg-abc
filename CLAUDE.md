@@ -28,7 +28,8 @@ Goal: build an `agent(obs_dict)` that wins the standard-format card battle. Two 
 - **7-07 早盤分數：Alakazam-741 = 851.5（配對贏家）/ megastarmie v2 = 821.0（vs 6-25 舊版 839 未顯著超越，Elo 未收斂）。隊伍 851.5/#733/4429（+17.7 分/+87 名）。top-100 門檻 979.4。我們的對局尚未進 7-06 episode dump（只涵蓋 199 活躍玩家），逐對手體檢等 7-07 dump。**
 - **7-07 Alakazam v3（用 7-06 新資料再挖 Majkel 10390 決策，未提交）：** (1) **Sacred Ash 修正**（TO_DECK 12→64%/hold-out 79%：從棄牌堆洗回時填滿 5 格線件，原本的保護條款只放 3 隻）；(2) **gust 目標用「可達手牌」判 KO-able**（Powerful Hand 抽到 11 張=220 → 拉 210HP 的 Ogerpon/Fez ex；中間形態 Morgrem/Gabite 拒進化 +350）；(3) TO_HAND 不再囤 Dudunsparce（引擎自己洗回牌庫；抓 Alakazam 線件，57→62%）；(4) Night Stretcher/Enhanced Hammer 加量。**A/B 直接對戰 851.5 上場版：62% 勝**；gauntlet 75.1% 持平；check_agent PASS。⚠ JIT-evolve 閘門實驗（拼圖留手上晚進化）量測退步（MAIN 43→38）已回退 — 與昨天斬殺閘門同教訓：**大的行為閘門在逐點指標上總是變差，只做局部排序修正**。
 - **新 #1 vibechu（1195.3）= Slowking 工具箱**（Slowpoke/Slowking 162/163 + Kyurem/Annihilape/Conkeldurr/Latias/Kangaskhan 散件 + Academy at Night 1248 + Ciphermaniac's Codebreaking 1188）158 場 65% WR — 全新原型，盯。Majkel #2/Yushin #3/nasuo #4 都還在（我們挖的三個標竿=前四中的三個）。
-- **下一步：(1) 明天用 7-07 episodes 做我們兩支的逐對手實戰體檢；(2) 提交決策：Alakazam v3（A/B 62% 勝上場版）與 garchomp 都在待命；(3) 每日 autopsy + 盯 Slowking。**
+- **7-07 SHIPPED 2/5（用戶指示「推上 kaggle 試試」，03:57 UTC）：Alakazam v3（#54414730）+ garchomp 首發（#54414739）。計分對 = 這兩支；megastarmie v2（821）與 Alakazam-741 首版（851.5）退出計分。**
+- **下一步：(1) TW 08:00 查 v3 + garchomp 分數；(2) 用 7-07 episodes 做逐對手實戰體檢（我們的對局會出現在裡面）；(3) 每日 autopsy + 盯 Slowking（新 #1 vibechu 原型）。**
 
 ## Previous status (2026-06-25 — megastarmie Hilda no-Basic fix SHIPPED)
 
