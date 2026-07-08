@@ -15,7 +15,24 @@ Goal: build an `agent(obs_dict)` that wins the standard-format card battle. Two 
 - **Strategy report**: `pokemon-tcg-ai-battle-challenge-strategy` ($240K). Deadline **2026-09-13**.
 - 5 submissions/day; latest 2 are scored.
 
-## Current status (2026-07-06 — META 大翻盤盤點；megastarmie v2 + Alakazam-741 已提交（用戶「如擬」核准）)
+## Current status (2026-07-08 — 體檢→挖礦→修正→SHIPPED 天梯 A/B 對（用戶預先授權「完成後直接推上天梯」）)
+
+- **7-08 SHIPPED 2/5（04:44 UTC）：Alakazam v3.1（#54449798，Run Away Draw 排序修正）+ v3 原版重跑（#54449811，= 860.3 那份）— 計分對 = 這兩支 = 天梯實測 A/B。TW 08:00 查分：修正版若 ≥ 原版就採納續挖，否則 v3 守住分數。**
+- **v3.1 內容（Majkel 7-07 配對挖礦，vs Grimmsnarl 1449 + vs Lucario 324 個 MAIN）**：板凳 Dudunsparce 的 Run Away Draw 15000→22000 = **回合內先抽 3 再做進化/鋪場決策**（他 ABILITY 157 vs 我們 43；我們的 EVOLVE:Dudunsparce/Kadabra 大量 over-pick 是晚抽的 cascade）。驗證：hold-out（Kangaskhan/Garchomp/mirror 5374 決策）MAIN 44→47%；**mirror A/B 120 場 55% 勝 v3**；口袋 gauntlet Lucario 65→73%（兩次獨立跑 73/75%）；check_agent PASS。
+- **7-08 失敗實驗（都已回退，教訓再度驗證）**：(1) TO_ACTIVE 翻 Abra>Kadabra（依 16 個分歧點翻案**已量測過的**排序）→ mirror A/B 崩到 29% — **不要用小樣本分歧推翻註解裡寫明量測過的決策**；(2) EVOLVE:Dudunsparce 綁 draw 條件閘門 → 逐點 agree 退步（行為閘門必敗 3 連敗）；(3) 前排 Run Away Draw 放寬循環 → mirror 無改善。**新流程教訓：pointwise agree 升 ≠ 實戰贏，mirror A/B 是必跑的毒藥檢測器——本次靠它抓出 TO_ACTIVE 毒藥。**
+- **7-08 基建**：`agents/archaludon`（口袋共識牌表，10/27 場相同，GenericPolicy）+ `cabt_gauntlet.py` FIELD 改口袋權重（Lucario 24/Archaludon 19/mirror 15/Grimm 8/Dragapult 6/Garchomp 5/Kangaskhan 3）。v3 口袋 gauntlet 基準 = 69.4%。
+- **Majkel（#1）已分兵兩副牌：Alakazam 380 場 59% + Solrock/Okidogi 工具箱 258 場 57%**（7-07 dump）。他的 Alakazam 對 Dragapult 也只有 11%（1/9）→ 原型級剋制，別想修。Solrock 牌組對 Grimm 34%/對 Kangaskhan 76% — 是他的防 Kangaskhan 側翼。
+- **下一步：(1) TW 08:00 查 v3.1 vs v3 天梯 A/B 讀數；(2) garchomp 對 Lucario 35%/Crustle 20% 的 nasuo 挖礦還沒做（他同牌 60%/50%，可挖但 garchomp 分數天花板低，優先度看 Alakazam 結果）；(3) 每日 autopsy。**
+
+- **7-08 分數：Alakazam v3 = 860.3（新高）/ garchomp 首發 = 713.8（弱）。隊伍 860.3 / #657 / 4531（+8.8 分 / +76 名）。top-100 門檻 977.9（差 ~118）。** 頂端：Majkel1337 回到 #1（1151.3）；vibechu（Slowking）掉出前五 — 可能曇花一現，下次 autopsy 確認。
+- **7-08 突破：Episode API 抓到我們自己的 142 場實戰**（每日 dump 只涵蓋 ~190 個頂級玩家，我們不在裡面）。方法見 memory `own_games_episode_api.md`：`ListEpisodes {submissionId}` + `kaggleusercontent.com/episodes/<id>.json`（要跟 301）。
+- **7-08 體檢結論（詳見 memory `pocket_meta_lesson.md`）：**
+  - **口袋 meta ≠ 頂級 meta**：Elo 700-900 的對手池是舊 meta — Archaludon ex ~19%（alakazam 池 30%！）、Mega Lucario ~24%、Alakazam 鏡像 ~15%、Dragapult ~6%、Crustle ~6%；Grimmsnarl 只有 ~3%。**gauntlet FIELD 權重要改成口袋配置；目前連 Archaludon 對手 agent 都沒有 — 要先建。**
+  - **alakazam_v3 實戰 54%**（79 場）：Archaludon 62%、Lucario 53%、鏡像 57%、**Dragapult 1/7=14%（最大單點失血）**、Grimmsnarl 1/4。6 場 turn1-2 被 donk（孤 basic 開局手牌全死卡，救不了）— 條件 donk 率 8.7% vs Majkel 1.7%，差異=對手池（低分帶快攻 turn2 能打 70）非駕駛 bug，爬分自然消退，勿過度工程。
+  - **garchomp 實戰 49%**（63 場）→ 713 的原因：**Lucario 6/17=35%、Crustle 1/5=20%**（ex 攻擊被鎖、20+ 回合僵死只拿 0-1 獎）、雜牌尾 0/5。nasuo445 同副牌對 Lucario 60% / Crustle 50% / Archaludon 67% → **駕駛差距，可再挖**（他 7-07 dump 有 690 場）。nasuo 對 Alakazam 鏡像僅 45%、對 Comfey 19%。
+- **下一步：(1) 建 agents/_opponents/archaludon + gauntlet 權重改口袋配置；(2) alakazam vs Dragapult 修配對（六場敗局多為獎賽被輾，Battle Cage 有打但擋不住）；(3) garchomp 對 Lucario/Crustle 用 nasuo 對局 divergence-mine（篩 matchup）；(4) 每日 autopsy + 盯 Slowking 是否退潮。**
+
+## Previous status (2026-07-06 — META 大翻盤盤點；megastarmie v2 + Alakazam-741 已提交（用戶「如擬」核准）)
 
 - **7-06 SHIPPED 2/5：megastarmie piloting v2（09:36 UTC）+ Alakazam-741（09:36 UTC）— 最新 2 計分 = 這一對。等 TW 08:00（UTC 00:00）後查分：`venv/bin/kaggle competitions submissions pokemon-tcg-ai-battle`。**
 

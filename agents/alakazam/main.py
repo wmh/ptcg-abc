@@ -556,6 +556,8 @@ class AlakazamPolicy:
                 # attacks -> no_offense loss.
                 if self._item_locked() or self._bench_attacker_ready():
                     return 14000
+                # (7-08: liberal active-copy cycling (Majkel 318x) was tried at 12800 and
+                # the mirror A/B REGRESSED — reverted; see the bench-copy sequencing note.)
                 return -1
             # BENCHED copy = the draw engine (pure filtering). Draw-engine decks WIN by
             # drawing aggressively (big hand = big Powerful Hand) — blanket deck-out guards
@@ -569,7 +571,12 @@ class AlakazamPolicy:
             # and leave "draw less" as a separate real-ladder A/B. Only the high-hand floor stays.
             if self.me.handCount >= 14 and self.me.deckCount <= 12:
                 return -1
-            return 15000
+            # SEQUENCING (Majkel matchup mining 7-08, vs Grimmsnarl 1449 + Lucario 324 MAIN):
+            # he fires Run Away Draw BEFORE the evolve/bench block (ABILITY his 157 vs our 43;
+            # our EVOLVE:Dudunsparce 151 / EVOLVE:Kadabra 144 over-picks are the cascade of
+            # drawing late). Draw first = decide the rest of the turn with 3 more cards, and
+            # the engine body shuffles itself away freeing the bench slot before we re-bench.
+            return 22000
         return 9000
 
     # — play —
@@ -783,6 +790,8 @@ class AlakazamPolicy:
                 return 20000
             return 6000
         if cid == C.DUDUNSPARCE:
+            # (7-08: gating this on the Run-Away-Draw conditions REGRESSED pointwise agree
+            # 49→46/45→43 — same lesson as the lethal/JIT gates: no behavior gates.)
             return 19000
         return 18000
 
@@ -932,6 +941,9 @@ class AlakazamPolicy:
             score += 200         # a powered Alakazam = our attacker
         elif card.id == C.KADABRA:
             score += 95          # 80 HP, one evolve from Alakazam — keep the line going
+                                 # (7-08: flipping Abra above Kadabra per 16 divergent Majkel
+                                 # picks LOST the mirror A/B 29% — the promoted Kadabra is a
+                                 # next-turn attacker via evolve; keep the measured order.)
         elif card.id == C.ABRA:
             score += 80          # continues the line to Alakazam (top pilots promote it)
         elif card.id == C.DUDUNSPARCE:

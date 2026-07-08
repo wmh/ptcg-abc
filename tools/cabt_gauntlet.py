@@ -29,12 +29,18 @@ sys.path.insert(0, ROOT + '/agents/_base')
 # 'generic' = a deck.csv piloted by GenericPolicy.
 # THE 5 OPPONENTS = the 5 most-prevalent top-tier decks (~85% of the Elo>=1000 field).
 # (Old-meta opponents Trevenant/Dragapult/Lucario-v3/Chandelure dropped — extinct on the ladder.)
+# 7-08 POCKET-META weights: what we actually face at our Elo (~700-900), measured from our
+# own 142 ladder games (memory: pocket_meta_lesson.md). The top-tier meta (Grimmsnarl 38%)
+# is what we'd face at 1000+ — kept as a small share for the climb target. The old top-tier
+# weights are preserved in git history.
 FIELD = [
-    ('Grimmsnarl', 38.6, 'generic', 'agents/grimmsnarl'),
-    ('Alakazam',   17.5, 'agent',   'agents/alakazam'),
-    ('Kangaskhan', 11.6, 'generic', 'agents/kangaskhan'),
-    ('Garchomp',   10.4, 'generic', 'agents/garchomp'),
-    ('Ogerpon',     6.7, 'generic', 'agents/ogerpon'),
+    ('Lucario',    24, 'agent',   'agents/lucario_v3'),
+    ('Archaludon', 19, 'generic', 'agents/archaludon'),
+    ('Alakazam',   15, 'agent',   'agents/alakazam'),
+    ('Grimmsnarl',  8, 'generic', 'agents/grimmsnarl'),
+    ('Dragapult',   6, 'agent',   'agents/dragapult'),
+    ('Garchomp',    5, 'agent',   'agents/garchomp'),
+    ('Kangaskhan',  3, 'generic', 'agents/kangaskhan'),
 ]
 
 
