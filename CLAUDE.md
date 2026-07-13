@@ -15,7 +15,25 @@ Goal: build an `agent(obs_dict)` that wins the standard-format card battle. Two 
 - **Strategy report**: `pokemon-tcg-ai-battle-challenge-strategy` ($240K). Deadline **2026-09-13**.
 - 5 submissions/day; latest 2 are scored.
 
-## Current status (2026-07-08 — 體檢→挖礦→修正→SHIPPED 天梯 A/B 對（用戶預先授權「完成後直接推上天梯」）)
+## Current status (2026-07-13 — 盤點 + P1 完成 + SHIPPED Alakazam v4 Xerosic 反鏡像包（用戶「如擬」核准）)
+
+- **7-13 SHIPPED 1/5（05:37 UTC）：Alakazam v4（#54634553）。計分對 = v4 + v3 重跑（#54449811, 767.9）= 天梯 A/B。下次查分（TW 08:00 後）：v4 若 > v3 重跑 → 反鏡像包路線確認，續挖；注意分數要 ≥100 場才算收斂讀數（860 教訓）。**
+
+- **7-13 天梯讀數：隊伍 769.3 / #1501 / 4917（從 860.3/#657 大跌）。top-100 門檻 998.4（差 ~229）。**
+  - **A/B 判定：v3 重跑（#54449811）= 769.3 / 175 場 WR 48.6%；v3.1（#54449798）= 754.5 / 161 場 WR 54.7%（但對手池偏低 Elo）。依預設規則 v3.1 < v3 → 守 v3；差距 ~1σ 屬噪音，兩者實力相當。**
+  - **關鍵發現：7-07 的 860.3 是「未收斂高點」** — 該提交 Elo 軌跡 888→876→869→849（83 場即被換掉，一路下滑）；同一 agent 重跑 175 場收斂 = 769。**Alakazam v3 真實力 ≈ 770-800，860 從來不是真的。以後任何 <100 場的分數讀數都要打折。**
+- **7-13 口袋池實測（Episode API 抓兩支共 336 場，Elo 700-850）：鏡像 18.8%/46%（7-11 單日 1/9！）、Lucario 16.4%/55%、Archaludon 15.8%/45%、Grimmsnarl 8.0%/41%、Cinderace 6.0%/45%、Crustle 5.4%/78%、Dragapult 5.1%/47%、Kangaskhan 4.5%/60%、Garchomp 3.9%/69%。三大失血（鏡像+Archaludon+Grimm ≈ 池 43%，全 <47%）。鏡像先後手無差（44/47%）、對手牌表新舊無差 → 純行中駕駛問題。敗局型態：Cinderace/Froslass 敗局短（93/62 步=被快攻輾），鏡像/Grimm 敗局長（160-168 步=僵持後輸）。**
+- **7-12 頂級 meta（Elo≥1100, 2617 場）：Alakazam 44.9%/53.7% + Kangaskhan 28.9%/55.1% 雙頭壟斷；Grimmsnarl 退潮 10.0%。** **TR Mewtwo ex 8.6%/63.2% = 新最強反制（剋 Alakazam 64%/Kangaskhan 71%）**；Froslass 67.6%/2.0%；Dusknoir 5.5%（剋 Kangaskhan 73%）。
+  - **新 #1 kashiwashira（1239.9）= TR Mewtwo 專武，dump 裡 451 場（63.2%）→ 最佳新牌組挖礦目標（牌表可直接抄+大量駕駛資料）。** #2 Yushin 雙修 Alakazam+Grimm；#3 Majkel 回歸純 Alakazam 655 場（鏡像資料充足）；#4/#5 = Kangaskhan（Budew 847 場）；#8 taksai = Froslass；#10 WinDecks = Dusknoir。vibechu 的 Slowking 已消失於前十 → 確認曇花一現。
+- **優先序（7-13 盤點結論）：P1 鏡像駕駛挖礦（池最大+WR最低+Majkel 655 場資料就緒，篩 matchup=Alakazam）；P2 Archaludon 對局修正（53 場 45%，用 agents/archaludon gauntlet 驗證）；P3 評估 TR Mewtwo 新牌組（抄 kashiwashira 60+挖 451 場；先用口袋權重 gauntlet 驗證再決定）；P4 恢復每日 autopsy——5 天空窗 = 零新資訊，本次教訓。**
+
+### P1 完成（7-13）— Alakazam v4「Xerosic 反鏡像包」（已提交 #54634553）
+- **牌表換 Majkel 現役 60**（7-12 dump 556/655 場同表；**頂級 Alakazam 共識**：#2 Yushin 448/448、#6 bono 383/383、#7 Rmy、#9 matsurih 全跑同款）：+3 Xerosic's Machinations（對手棄到 3 手牌 = **鏡像鎖對方 Powerful Hand ≤60**）+2 Nighttime Mine（Tera 稅，剋 Dragapult ex）+1 Fez ex +1 Shaymin；砍 Battle Cage/2 Night Stretcher/1 Candy/1 Dunsparce/1 Dudunsparce/1 基本{P}。`divergence_decode.py` 新增 `--opp-archetype`（配對挖礦工具化）。
+- **驗證：鏡像 A/B vs 凍結 v3.1（舊表）= 193W/47L = 80.4%（240 場，兩獨立 120 場 83%/78%）**；check_agent PASS；口袋 gauntlet 63.2%（vs v3 基準 69.4%，差異 = vs Lucario 57%（−15，牌表一致性代價）+ 鏡像線 46% 是「自我鏡像」假讀數——gauntlet 的 Alakazam 對手 = agents/alakazam 自己，真鏡像讀數以 A/B 80.4% 為準）。**口袋 EV：鏡像 18.8% 池 ×(+30pts) >> Lucario 16.4% ×(−15pts)，且頂級 45% 全是 Alakazam → 未來鏡像佔比只增不減。**
+- **7-13 失敗實驗（毒藥偵測器又立功，全回退）**：照挖礦訊號做的「攻擊經濟學重定價」批次（ATTACK 6800+3×dmg 高於鋪場、Xerosic 壓到 6500、Dunsparce/Fez/Shaymin 降級）→ **鏡像 A/B 83%→28% 崩盤**；回退後逐項測 Pad 14000/Hammer 11000 也 −10pts（73-74%）。**教訓三度驗證：divergence 訊號（他 ATTACK 275x/Pad 134x/Hammer 119x）不保證贏——pointwise agree ≠ 實戰，每項改動必過 mirror A/B。最終版 = 純「換牌表+四張新卡政策」，主體分數一律不動。**
+- 凍結的舊版對照組在 `agents/_ab_v3_frozen/`（untracked，= HEAD 的 v3.1 code+舊表，A/B 基準用）。
+
+## Previous status (2026-07-08 — 體檢→挖礦→修正→SHIPPED 天梯 A/B 對（用戶預先授權「完成後直接推上天梯」）)
 
 - **7-08 SHIPPED 2/5（04:44 UTC）：Alakazam v3.1（#54449798，Run Away Draw 排序修正）+ v3 原版重跑（#54449811，= 860.3 那份）— 計分對 = 這兩支 = 天梯實測 A/B。TW 08:00 查分：修正版若 ≥ 原版就採納續挖，否則 v3 守住分數。**
 - **v3.1 內容（Majkel 7-07 配對挖礦，vs Grimmsnarl 1449 + vs Lucario 324 個 MAIN）**：板凳 Dudunsparce 的 Run Away Draw 15000→22000 = **回合內先抽 3 再做進化/鋪場決策**（他 ABILITY 157 vs 我們 43；我們的 EVOLVE:Dudunsparce/Kadabra 大量 over-pick 是晚抽的 cascade）。驗證：hold-out（Kangaskhan/Garchomp/mirror 5374 決策）MAIN 44→47%；**mirror A/B 120 場 55% 勝 v3**；口袋 gauntlet Lucario 65→73%（兩次獨立跑 73/75%）；check_agent PASS。

@@ -88,7 +88,8 @@ def decode_opt(o, obs, my_index):
     return tn
 
 
-def analyze(zip_path, agent_dir, archetype, elo_cut, max_games, only_ctx, show, player=None):
+def analyze(zip_path, agent_dir, archetype, elo_cut, max_games, only_ctx, show, player=None,
+            opp_archetype=None):
     elo = ma.load_elo('/tmp/lb')
     m = load_agent(agent_dir)
     agent = m.agent
@@ -121,6 +122,8 @@ def analyze(zip_path, agent_dir, archetype, elo_cut, max_games, only_ctx, show, 
                 continue
             decks = [d['steps'][1][0]['action'], d['steps'][1][1]['action']]
             if ma.dk(decks[win]) != archetype:
+                continue
+            if opp_archetype and ma.dk(decks[1 - win]) != opp_archetype:
                 continue
             games += 1
             steps = d['steps']
@@ -194,8 +197,11 @@ def main():
     ap.add_argument('--max-games', type=int, default=120)
     ap.add_argument('--show', type=int, default=25)
     ap.add_argument('--player', default=None, help='restrict to one exact pilot TeamName')
+    ap.add_argument('--opp-archetype', default=None,
+                    help='restrict to games where the OPPONENT deck is this archetype (matchup mining)')
     a = ap.parse_args()
-    analyze(a.zip, a.agent_dir, a.archetype, a.elo, a.max_games, a.context, a.show, a.player)
+    analyze(a.zip, a.agent_dir, a.archetype, a.elo, a.max_games, a.context, a.show, a.player,
+            a.opp_archetype)
 
 
 if __name__ == '__main__':

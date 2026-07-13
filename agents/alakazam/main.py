@@ -24,6 +24,8 @@ class C:
     PSYDUCK = 858         # Damp (ability lock tech)
     SHAYMIN = 343         # Flower Curtain (protect non-Rule-Box bench)
     GENESECT = 142        # ACE Nullifier (with tool)
+    FEZANDIPITI = 140     # ex (2 prizes): Flip the Script (+3 draw if we were KO'd last
+                          # turn) + Cruel Arrow (100 snipe). Majkel 7-12 mirror tech.
 
     PSYCHIC_ENERGY = 5
     TELEPATH_ENERGY = 19  # special, provides {P}
@@ -35,7 +37,12 @@ class C:
     DAWN = 1231           # Supporter: search Basic+Stage1+Stage2
     RARE_CANDY = 1079
     BOSS_ORDERS = 1182
-    BATTLE_CAGE = 1264    # Stadium: block bench damage counters
+    BATTLE_CAGE = 1264    # Stadium: block bench damage counters (cut from the 7-12 list)
+    XEROSIC = 1197        # Supporter: opp discards down to 3 cards — in the mirror this
+                          # caps their Powerful Hand at 60 AND strips resources (7-12 Majkel
+                          # runs 3; mirror opponents who beat us played it 0.56x/game)
+    NIGHTTIME_MINE = 1266 # Stadium: each TERA Pokémon's attacks cost +{C} (both sides —
+                          # we run zero Tera, so it's a pure tax on Dragapult ex etc.)
     ENHANCED_HAMMER = 1081  # Item: discard a Special Energy from opp (e.g. Mist Energy)
     LUCKY_HELMET = 1156   # Tool: draw 2 when damaged
     WONDROUS_PATCH = 1146
@@ -344,6 +351,14 @@ class AlakazamPolicy:
                 return True
         return False
 
+    def _opp_has_tera(self):
+        """Opponent has a Tera Pokémon in play -> Nighttime Mine taxes their attacks."""
+        for p in (self.opponent.active + self.opponent.bench):
+            c = card_table.get(p.id) if p is not None else None
+            if c is not None and getattr(c, 'tera', False):
+                return True
+        return False
+
     def _opp_has_self_ko_ability(self):
         """Opponent has an ability that KOs the user itself -> Psyduck (Damp) matters."""
         return any(p is not None and p.id in SELF_KO_ABILITY_IDS
@@ -577,6 +592,11 @@ class AlakazamPolicy:
             # drawing late). Draw first = decide the rest of the turn with 3 more cards, and
             # the engine body shuffles itself away freeing the bench slot before we re-bench.
             return 22000
+        if card.id == C.FEZANDIPITI:
+            # Flip the Script: free +3 cards (= +60 Powerful Hand), no shuffle-back cost.
+            # Fire it FIRST like Run Away Draw — decide the rest of the turn with the
+            # bigger hand (engine only offers it when legal).
+            return 21500
         return 9000
 
     # — play —
@@ -608,7 +628,13 @@ class AlakazamPolicy:
         if cid == C.SHAYMIN:
             # Flower Curtain protects the bench from attack damage -> bench it ONLY vs a
             # bench-damage (spread/snipe) opponent; otherwise it just clogs a bench slot.
+            # (Covers the mirror too: opp Fezandipiti ex's Cruel Arrow is a bench snipe.)
             return 17000 if (n == 0 and self._opp_threatens_bench()) else -1
+        if cid == C.FEZANDIPITI:
+            # 1x tech: bench for Flip the Script (+3 cards = +60 Powerful Hand on our
+            # comeback turns). It's a 2-prize gust target, so it needs a spare slot —
+            # below every line piece, above nothing-better.
+            return 10000 if n == 0 else -1
         if cid == C.PSYDUCK:
             # Damp only locks self-KO abilities (almost nothing in this meta) -> bench it
             # ONLY when the opponent actually has such an ability in play.
@@ -732,7 +758,10 @@ class AlakazamPolicy:
                    and card_table[e.id].cardType == CardType.SPECIAL_ENERGY
                    for p in (self.opponent.active + self.opponent.bench) if p is not None
                    for e in (getattr(p, 'energyCards', None) or [])):
-                return 9500   # Majkel hammers special energy on sight (248x on 7-06)
+                return 9500   # Majkel hammers special energy on sight (248x on 7-06).
+                              # (7-13: raising Pad→14000/9200 + Hammer→11000 per the mirror
+                              # mining measured ~10pts WORSE in the mirror A/B (83%→73-74%)
+                              # — those divergence signals failed the poison test; keep.)
             return -1
         if cid == C.BATTLE_CAGE:
             if self.state.stadiumPlayed or self.stadium_id == C.BATTLE_CAGE:
@@ -740,6 +769,30 @@ class AlakazamPolicy:
             # 1 copy in the Majkel list — hold it for bench-damage matchups (Grimmsnarl's
             # Shadow Bullet / Munkidori), don't burn it on sight (225x over-pick)
             return 6500 if self._opp_threatens_bench() else 1500
+        if cid == C.XEROSIC:
+            # Opp discards down to 3 — every stripped card is -20 off THEIR Powerful Hand
+            # (mirror) and a lost resource otherwise. 7-13 mining: our #3 over-pick (228x)
+            # at 12800 — Majkel holds it and fires selectively on a BIG hand; it also costs
+            # the supporter slot AND -20 our own Powerful Hand.
+            if self.state.supporterPlayed:
+                return -1
+            opp_hand = getattr(self.opponent, 'handCount', 0) or 0
+            # (7-13 A/B: demoting this to 6500 [below ATTACK] crashed the mirror A/B
+            # 83%→28% — Xerosic aggression IS the mirror win condition vs builders even
+            # though pointwise mining says Majkel holds it. Ladder A/B > pointwise agree.)
+            if opp_hand >= 7:
+                return 12800
+            if opp_hand >= 5:
+                return 8800
+            return 1000
+        if cid == C.NIGHTTIME_MINE:
+            if self.state.stadiumPlayed or self.stadium_id == C.NIGHTTIME_MINE:
+                return -1
+            # We run zero Tera: vs a Tera board (Dragapult ex etc.) it's a pure attack tax;
+            # otherwise still fine to bump/deny the opponent's own stadium.
+            if self._opp_has_tera():
+                return 9000
+            return 4000 if self.stadium_id else 1200
         if cid == C.LUCKY_HELMET:
             return 7000 if not ready else 1000
         if cid == C.NIGHT_STRETCHER:
@@ -856,6 +909,9 @@ class AlakazamPolicy:
         # Lethal: if this KO takes our last remaining prize(s), it wins the game now.
         if opp.hp <= dmg and prize_count(opp) >= len(self.me.prize):
             return 90000
+        # (7-13: repricing attacks to 6800+3×dmg so ATTACK outranks bench/tech plays was
+        # part of a batch that crashed the mirror A/B 83%→28% — reverted with the batch.
+        # "Attack earlier, hold fluff" remains unproven; retest it ALONE if ever.)
         score = 1000 + min(dmg, 320)
         if opp.hp <= dmg:
             score += 2500 + prize_count(opp) * 200
@@ -986,6 +1042,8 @@ class AlakazamPolicy:
             return 150 if (n == 0 and self._opp_threatens_bench()) else -1
         if cid == C.PSYDUCK:
             return 90 if (n == 0 and self._opp_has_self_ko_ability()) else -1
+        if cid == C.FEZANDIPITI:
+            return 95 if n == 0 else -1
         return 100 - 20 * n
 
     def _score_to_hand(self, card):
