@@ -63,6 +63,11 @@ DUNSPARCE_RAM = 424
 
 ENERGY_TYPES = {C.PSYCHIC_ENERGY, C.TELEPATH_ENERGY, C.ENRICHING_ENERGY}
 ATTACKER_IDS = {C.ALAKAZAM, C.KADABRA}
+# Mega Lucario aggro package (Riolu/Mega Lucario + Solrock/Lunatone/Hariyama flank).
+# These decks don't care about their own hand size, so Xerosic's discard-to-3 is a
+# wasted supporter slot against them (7-14 ladder autopsy: we burned Xerosic 2-5x per
+# game vs Lucario while losing the prize race 0-2 to 5-6).
+RUSH_LINE_IDS = {673, 674, 675, 676, 677, 678}
 LOW_DECK_COUNT = 6
 pre_turn = -1
 
@@ -350,6 +355,12 @@ class AlakazamPolicy:
             if c and any(aid in BENCH_DAMAGE_ATTACKS for aid in (c.attacks or [])):
                 return True
         return False
+
+    def _opp_is_rush(self):
+        """Opponent is the Mega Lucario aggro package -> their hand size is irrelevant,
+        so the supporter slot must go to draw (Powerful Hand fuel), not Xerosic."""
+        return any(p is not None and p.id in RUSH_LINE_IDS
+                   for p in (self.opponent.active + self.opponent.bench))
 
     def _opp_has_tera(self):
         """Opponent has a Tera Pokémon in play -> Nighttime Mine taxes their attacks."""
@@ -777,6 +788,10 @@ class AlakazamPolicy:
             if self.state.supporterPlayed:
                 return -1
             opp_hand = getattr(self.opponent, 'handCount', 0) or 0
+            if self._opp_is_rush():
+                # vs the Lucario aggro package the discard does nothing (they play off
+                # the board, not the hand) — never outrank Hilda/Dawn/Boss here.
+                return 2500 if opp_hand >= 8 else 800
             # (7-13 A/B: demoting this to 6500 [below ATTACK] crashed the mirror A/B
             # 83%→28% — Xerosic aggression IS the mirror win condition vs builders even
             # though pointwise mining says Majkel holds it. Ladder A/B > pointwise agree.)

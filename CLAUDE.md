@@ -15,7 +15,19 @@ Goal: build an `agent(obs_dict)` that wins the standard-format card battle. Two 
 - **Strategy report**: `pokemon-tcg-ai-battle-challenge-strategy` ($240K). Deadline **2026-09-13**.
 - 5 submissions/day; latest 2 are scored.
 
-## Current status (2026-07-13 — 盤點 + P1 完成 + SHIPPED Alakazam v4 Xerosic 反鏡像包（用戶「如擬」核准）)
+## Current status (2026-07-14 — v4 初讀不利→Lucario 敗局解剖→SHIPPED v4.1 rush-gate + v3 重跑（用戶「如擬」核准）)
+
+- **7-14 SHIPPED 2/5（03:48 UTC）：v4.1（#54671175，Xerosic rush-gate）+ v3 重跑（#54671182，= 3c5caf3 舊牌表）。計分對 = 這兩支 = 同窗天梯 A/B（同起點 ~520、同時段、同低分池）。顯示分會暫跌到 ~600 幾天（772.5 的 7-08 v3 已被擠出計分對）— 這是刻意的：v4 排賽已枯竭（20 小時只 +1 場，凍在 616），等待零資訊；離 8-16 截止還 ~4 輪收斂週期。判定（兩支各 ≥100 場）：v4.1 > v3 重跑 → Majkel-60 反鏡像牌表+rush-gate 路線確認；v4.1 ≤ v3 重跑 → 新牌表在低分池結構性爬不動，退回 v3 牌表、鏡像成果只保留駕駛層。**
+
+- **7-14 天梯：隊伍 772.5 / #1463 / 4979（= v3 重跑守住）。top-100 門檻 983.7（差 ~211）、top-1000 = 816、top-500 = 872。**
+- **v4 A/B 初讀（51 場，未收斂但訊號負）：611.9 / WR 47.1%（近 40 場 42%）。新提交從 ~520 起爬，卡在 Elo ~612 / 對手池均值 625 的地下室。結構性困境：低分池 = Lucario 谷底（20% 場次、我們 2-8=20%），鏡像稀少（5 場，但 4-1 = 反鏡像包確實有效）— v4 的優勢池在 750+，爬不上去就兌現不了。**
+- **7-14 Lucario 敗局解剖（Episode API 全 51 場 replay）：8 敗 = 4 場獎賽被輾（對手 10 回合拿 5-6 獎、我們 0-2；Mega Lucario 340HP+Cape 440 我們打不穿）+ 2 場 T2 donk + 2 場空板凳死。天梯 Lucario 牌表 ≈ agents/lucario_v3（多數 60/60）→ 差在駕駛。本地 A/B v4 vs lucario_v3 = 62.5%（120 場）vs 天梯 20% — cabt 打不出真人壓迫，勿當先知。**
+  - **Majkel 贏 Lucario 的路徑（dump 2 場皆勝）：一口氣 KO Mega Lucario ex 拿 3 獎 ×2。Powerful Hand 是放指示物「不吃弱點」（已驗證卡片文本，代碼正確）→ KO 340 需 17 張手牌 = 抽爆牌庫；或 245 胡地 Psychic 吃弱點 ×2（對手 3 能量 = 320）。關鍵 = 每個補給位都要拿去抽牌。**
+  - **漏洞定位：Xerosic 12800 > Hilda 12500 > Dawn 12000 — 對手手牌 ≥7 時永遠搶走抽牌位，vs Lucario（手牌無關快攻）純虧；每敗局實際燒 2-5 次。Nighttime Mine vs 非 Tera 也是死牌（低分未動）。**
+- **v4.1 內容：Xerosic 加 `_opp_is_rush()` 對局閘門（RUSH_LINE_IDS = Lucario 線 673-678 在對手板面 → Xerosic 壓到 2500/800，抽牌優先）。鏡像行為 bit-identical（閘門在鏡像永不觸發）。驗證：check_agent PASS；鏡像 A/B 71%@120（= v4-vs-frozen 第三次取樣，前兩次 83/78，噪音內，毒藥測試過）；vs lucario_v3 64.0%@200（基準 62.5%，本地持平 — cabt bot 打不出天梯真人壓迫，真效果天梯驗）。**
+- **下一步：(1) 每日查 v4.1 vs v3 重跑爬升軌跡（Episode API 或 submissions）；(2) 繼續 P1 鏡像挖礦（Majkel 655 場，池最大）；(3) 深挖 Lucario 駕駛可用舊 dump（7-07 有 Majkel vs Lucario 324 MAIN，舊牌表但目標選擇/排序可遷移）；(4) 空板凳/donk 4 敗提示 vs 快攻鋪場紀律 — 未動（鏡像挖礦說小板凳，動之前必須配對閘門）；(5) 恢復每日 autopsy。**
+
+## Previous status (2026-07-13 — 盤點 + P1 完成 + SHIPPED Alakazam v4 Xerosic 反鏡像包（用戶「如擬」核准）)
 
 - **7-13 SHIPPED 1/5（05:37 UTC）：Alakazam v4（#54634553）。計分對 = v4 + v3 重跑（#54449811, 767.9）= 天梯 A/B。下次查分（TW 08:00 後）：v4 若 > v3 重跑 → 反鏡像包路線確認，續挖；注意分數要 ≥100 場才算收斂讀數（860 教訓）。**
 
