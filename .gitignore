@@ -11,8 +11,10 @@ private/
 docs/official/
 
 # ── Local engine copied into agents for testing (official, large) ─
-**/cg/
-agents/**/cg/
+# no trailing slash: also catch cg SYMLINKS (e.g. agents/_ab_v3_frozen/cg),
+# which the dir-only `cg/` pattern misses
+**/cg
+agents/**/cg
 
 # ── Build artifacts / environments / caches ────────────────────
 venv/
