@@ -68,13 +68,6 @@ ATTACKER_IDS = {C.ALAKAZAM, C.KADABRA}
 # wasted supporter slot against them (7-14 ladder autopsy: we burned Xerosic 2-5x per
 # game vs Lucario while losing the prize race 0-2 to 5-6).
 RUSH_LINE_IDS = {673, 674, 675, 676, 677, 678}
-# Archaludon fortress package (Duraludon 130 -> Archaludon ex 300HP, Metal Defender 220
-# one-shots our whole line; Jumbo Ice Cream heals 80). 7-16 autopsy of 21 ladder games:
-# every winning Powerful Hand into Archaludon ex was >=300 (one-shot); every loss was
-# sub-300 chip spam healed away, with the supporter slot burned on Boss/Xerosic instead
-# of draw. Dump winners (9 games): Dawn/Hilda 20 : Xerosic 3 : Boss 1 — the supporter
-# slot IS the ammunition (hand size = damage), so vs this line always draw first.
-FORTRESS_LINE_IDS = {169, 190}
 LOW_DECK_COUNT = 6
 pre_turn = -1
 
@@ -369,13 +362,6 @@ class AlakazamPolicy:
         return any(p is not None and p.id in RUSH_LINE_IDS
                    for p in (self.opponent.active + self.opponent.bench))
 
-    def _opp_is_fortress(self):
-        """Opponent is the Archaludon wall package -> the only win path is drawing to a
-        one-shot Powerful Hand (300+; Ice Cream heals chip damage away), so mid-game the
-        supporter slot goes to Dawn/Hilda, not Boss/Xerosic."""
-        return any(p is not None and p.id in FORTRESS_LINE_IDS
-                   for p in (self.opponent.active + self.opponent.bench))
-
     def _opp_has_tera(self):
         """Opponent has a Tera Pokémon in play -> Nighttime Mine taxes their attacks."""
         for p in (self.opponent.active + self.opponent.bench):
@@ -433,15 +419,13 @@ class AlakazamPolicy:
                    for e in (getattr(opp, 'energyCards', None) or []))
 
     # — damage —
-    def _alakazam_damage(self, attack_id, target, hand_delta=0):
+    def _alakazam_damage(self, attack_id, target):
         if target is None:
             return 0
         if attack_id == POWERFUL_HAND:
             if self._effect_prevented(target):
                 return 0                     # Mist Energy etc. negates "place counters"
-            # hand_delta: cards the planned play removes from hand BEFORE the attack
-            # (e.g. Boss's Orders itself) — each is -20 damage.
-            return 20 * max(0, self._hand_size() + hand_delta)   # counters -> no weakness
+            return 20 * self._hand_size()    # counter placement -> no weakness
         if attack_id == PSYCHIC_ATK:
             # 245 Alakazam: 10 + 50 per energy on opp Active. This is DAMAGE, so it goes
             # THROUGH Mist Energy and applies Weakness — our answer to Mist/energy decks.
@@ -464,22 +448,21 @@ class AlakazamPolicy:
                 dmg = max(0, dmg - 30)
         return dmg
 
-    def _active_best_dmg(self, target, hand_delta=0):
+    def _active_best_dmg(self, target):
         a = self.me.active[0] if self.me.active else None
         if a is None or target is None:
             return 0
         if self._energy_count(a) >= 1:
             if a.id == C.ALAKAZAM:
-                return self._alakazam_damage(POWERFUL_HAND, target, hand_delta)
+                return self._alakazam_damage(POWERFUL_HAND, target)
             if a.id == C.ALAKAZAM_PSY:
                 return self._alakazam_damage(PSYCHIC_ATK, target)
             if a.id == C.KADABRA:
                 return self._alakazam_damage(SUPER_PSY_BOLT, target)
         return 0
 
-    def _gust_ko_targets(self, hand_delta=0):
-        return [p for p in self.opponent.bench
-                if p is not None and self._active_best_dmg(p, hand_delta) >= p.hp]
+    def _gust_ko_targets(self):
+        return [p for p in self.opponent.bench if p is not None and self._active_best_dmg(p) >= p.hp]
 
     def _target_value(self, p):
         """Tactical worth of removing opponent Pokémon p (ported from the official
@@ -501,12 +484,12 @@ class AlakazamPolicy:
         s += getattr(p, 'hp', 0)
         return s
 
-    def _gust_value(self, p, after_boss=False):
-        d = self._active_best_dmg(p, -1 if after_boss else 0)
+    def _gust_value(self, p):
+        d = self._active_best_dmg(p)
         # Majkel gusts what the ACHIEVABLE Powerful Hand can KO (he pulls 210HP Ogerpon/Fez
         # ex up and draws to 11+), not just what the current hand kills.
         if self._have_attacker() and not self._effect_prevented(p):
-            d = max(d, 20 * self._achievable_hand(after_boss=after_boss))
+            d = max(d, 20 * self._achievable_hand())
         if d >= p.hp:
             if prize_count(p) >= len(self.me.prize):
                 return 90000        # KO-ing this wins the game — gust it
@@ -681,16 +664,12 @@ class AlakazamPolicy:
     def _open_bench(self):
         return sum(1 for p in self.me.bench if p is not None) < getattr(self.me, "benchMax", 5)
 
-    def _achievable_hand(self, after_boss=False):
+    def _achievable_hand(self):
         """Biggest hand we can realistically reach THIS turn (Powerful Hand = 20×hand):
-        current hand + Run Away Draw (+3) + one draw/search Supporter (~+1 net).
-        after_boss: Boss's Orders consumes the supporter slot AND itself (-1 card),
-        so no draw-supporter bonus applies on a turn we plan to gust."""
+        current hand + Run Away Draw (+3) + one draw/search Supporter (~+1 net)."""
         extra = 0
         if self.me.deckCount > 7 and any(p is not None and p.id == C.DUDUNSPARCE for p in self.me.bench):
             extra += 3
-        if after_boss:
-            return self.me.handCount - 1 + extra
         if not self.state.supporterPlayed and (self.hand[C.HILDA] or self.hand[C.DAWN]):
             extra += 1
         return self.me.handCount + extra
@@ -744,17 +723,14 @@ class AlakazamPolicy:
                 return -1
             if draw_for_ko:
                 return 14000
-            # vs the Archaludon wall the KO is never "reachable this turn" early on
-            # (needs hand 15+), but every draw is +20 toward the one-shot — the draw
-            # supporter must keep outranking Boss/Xerosic all game (7-16 autopsy).
-            return 12500 if (self._need_pieces() or self._opp_is_fortress()) else 5000
+            return 12500 if self._need_pieces() else 5000
         if cid == C.DAWN:
             if self.state.supporterPlayed:
                 return -1
             if draw_for_ko:
                 return 13800
             # Majkel plays Dawn broadly (214x divergent) — +3 hand = +60 Powerful Hand
-            return 12000 if (self._need_pieces() or self._opp_is_fortress()) else 7500
+            return 12000 if self._need_pieces() else 7500
         if cid == C.BUDDY_POFFIN:
             bodies = (self.field[C.ABRA] + self.field[C.KADABRA] + self.field[C.ALAKAZAM]
                       + self.field[C.ALAKAZAM_PSY] + self.field[C.DUNSPARCE]
@@ -769,14 +745,7 @@ class AlakazamPolicy:
         if cid == C.BOSS_ORDERS:
             if self.state.supporterPlayed:
                 return -1
-            # vs the Archaludon wall (only): the gust-KO check must use the hand AFTER
-            # Boss leaves it (-20 damage) — hand 8 pulling a 160HP Cinderace = 140 whiff,
-            # the 7-16 autopsy found exactly these wasted gusts in the losses. The same
-            # correction applied GLOBALLY measured -10pts vs Lucario (70%→60%@200, cabt
-            # poison test) — mathematically right ≠ wins; keep it fortress-gated so every
-            # other matchup stays bit-identical to v4.1.
-            fortress = self._opp_is_fortress()
-            ko = self._gust_ko_targets(hand_delta=-1 if fortress else 0)
+            ko = self._gust_ko_targets()
             # If we can KO the Active threat this turn and it's worth at least as much as
             # any benched target, KO IT — don't gust a weaker Pokémon and leave the threat.
             if opp_active is not None and self._ko_active_reachable():
@@ -785,15 +754,10 @@ class AlakazamPolicy:
                     return -1
             if not ko:
                 return -1
-            best = max(ko, key=lambda p: self._gust_value(p, after_boss=fortress))
+            best = max(ko, key=self._gust_value)
             if opp_active is not None and self._active_best_dmg(opp_active) >= opp_active.hp \
                     and prize_count(opp_active) >= prize_count(best):
                 return -1
-            if fortress and self._gust_value(best, after_boss=True) < 90000:
-                # vs the Archaludon wall the draw supporter IS the win path — gust only
-                # when it wins the game outright, else rank below Hilda/Dawn (dump
-                # winners: Boss 1x in 7 wins vs our 10x in 14 losses).
-                return 11000
             return 13500
         if cid == C.ENHANCED_HAMMER:
             # Strip Mist/effect-prevention Special Energy off the opponent's Active so
@@ -824,11 +788,9 @@ class AlakazamPolicy:
             if self.state.supporterPlayed:
                 return -1
             opp_hand = getattr(self.opponent, 'handCount', 0) or 0
-            if self._opp_is_rush() or self._opp_is_fortress():
+            if self._opp_is_rush():
                 # vs the Lucario aggro package the discard does nothing (they play off
                 # the board, not the hand) — never outrank Hilda/Dawn/Boss here.
-                # vs Archaludon likewise: Assemble Alloy fuels from the board and the
-                # matchup is a pure draw race to a 300+ one-shot (7-16 autopsy).
                 return 2500 if opp_hand >= 8 else 800
             # (7-13 A/B: demoting this to 6500 [below ATTACK] crashed the mirror A/B
             # 83%→28% — Xerosic aggression IS the mirror win condition vs builders even

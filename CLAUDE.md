@@ -15,7 +15,16 @@ Goal: build an `agent(obs_dict)` that wins the standard-format card battle. Two 
 - **Strategy report**: `pokemon-tcg-ai-battle-challenge-strategy` ($240K). Deadline **2026-09-13**.
 - 5 submissions/day; latest 2 are scored.
 
-## Current status (2026-07-14 — v4 初讀不利→Lucario 敗局解剖→SHIPPED v4.1 rush-gate + v3 重跑（用戶「如擬」核准）)
+## Current status (2026-07-16 — A/B 收斂=平手→Archaludon 敗局解剖→v4.2 fortress-gate 完成（已 commit，未提交 Kaggle）)
+
+- **7-16 A/B 收斂判定（各 ~100 場）：v4.1 = 724.6 / 99 場 / WR 48.5% vs v3 重跑 = 723.1 / 94 場 / WR 47.9% → 平手（+1.5）。7-15 的 +47 蒸發，兩支都從 ~780 峰值滑落收斂到 ~725 = 當前池真實力（池均值 745-755，比 7-08 的 770 池難 ~45 分）。機制讀數支持保留新牌表：鏡像 53% vs v3 的 40%（反鏡像包真有效）；Lucario 50% vs 53%（rush-gate 抵銷換牌代價）。隊伍 724.6/#1958/5100；top-1000=815.6、top-500=869.2。**
+- **7-16 新最大失血點 = Archaludon ex：池 17%（第二大）、v4.1 6/17=35%。21 場全 replay 解剖：不是僵持是被獎賽輾——對手 T2-3 Assemble Alloy 上 300HP 牆 + Metal Defender 220 每回合一擊帶走我們；敗場我們整場只打出 2-4 次攻擊。勝負分水嶺（我們自己的數據）：勝場打進 Archaludon ex 的 Powerful Hand 全 ≥300（一擊 KO）；敗場 15 發 60-260 小砲全被 Jumbo Ice Cream（治80×4）洗掉。支援者位分配：敗場 Boss 10+Xerosic 10/59=34% 沒抽牌；dump 勝方（13 場，9 勝）= Dawn/Hilda 20 : Xerosic 3 : Boss 1 —— 手牌×20=傷害，抽牌位就是砲彈。另抓到通用 bug：Boss gust-KO 判定用出 Boss 前的手牌（Boss 本身離手 = −20），手牌 8 拉 160HP Cinderace 打 140 白燒（敗場實錄 ×3）。**
+- **7-16 v4.2 內容（比照 rush-gate 前例，全部 fortress 閘門內的局部分數修正，非 fortress 對局 bit-identical 於 v4.1）：`_opp_is_fortress()`（對手板面有 169/190 Duraludon/Archaludon 線）→ (1) Xerosic 壓 2500/800（同 rush 待遇）；(2) Hilda 12500/Dawn 12000 全程保持（不再中盤掉到 5000/7500 被 Boss/Xerosic 蓋過）；(3) Boss 降 11000（除非 gust 直接贏局）；(4) Boss off-by-one 修正（gust-KO 判定扣 Boss 本身離手 −20：`_gust_ko_targets(hand_delta=-1)` + `_gust_value(after_boss=True)`）。**
+- **7-16 毒藥偵測器四度立功：Boss off-by-one 修正原本做成通用（數學上正確），cabt 毒藥測試 vs sample lucario 70%→60%@200（−10pts，同 7-13 Pad/Hammer 教訓「正確 ≠ 贏」）→ 收進 fortress 閘門，非 fortress 全部回到 v4.1 原行為（代碼層面可證：所有新參數 default = 舊路徑）。**
+- **7-16 驗證：check_agent PASS；vs archaludon bot 78%@200（v4.1 基準）→ 84%@200（閘門版；閘門化前通用版 86%，同級）；鏡像/Lucario = bit-identical（免測；閘門化前的通用版鏡像 A/B 52%@240 也無退步）；21 場天梯 replay 決策對比：2085 決策點改 66 個（3.2%）、全部 MAIN、方向全對（Xerosic→Hilda 20x、Boss→抽牌 8x、Dawn→Hilda 12x、ATTACH→抽牌 15x），閘門化前後 66 個轉向完全一致。注意：本地 archaludon bot = GenericPolicy，打不出天梯 35% 的壓迫（v4.1 本地已 78%），真效果天梯驗。對照組凍結在 `agents/_ab_v41_frozen/`（untracked）。**
+- **未提交 Kaggle（用戶只說 commit push）。建議提交策略：只提交 v4.2 一支 → 計分對變 v4.2 + v3 重跑（723 當顯示分地板），不要雙提交歸零。**
+
+## Previous status (2026-07-14 — v4 初讀不利→Lucario 敗局解剖→SHIPPED v4.1 rush-gate + v3 重跑（用戶「如擬」核准）)
 
 - **7-14 SHIPPED 2/5（03:48 UTC）：v4.1（#54671175，Xerosic rush-gate）+ v3 重跑（#54671182，= 3c5caf3 舊牌表）。計分對 = 這兩支 = 同窗天梯 A/B（同起點 ~520、同時段、同低分池）。顯示分會暫跌到 ~600 幾天（772.5 的 7-08 v3 已被擠出計分對）— 這是刻意的：v4 排賽已枯竭（20 小時只 +1 場，凍在 616），等待零資訊；離 8-16 截止還 ~4 輪收斂週期。判定（兩支各 ≥100 場）：v4.1 > v3 重跑 → Majkel-60 反鏡像牌表+rush-gate 路線確認；v4.1 ≤ v3 重跑 → 新牌表在低分池結構性爬不動，退回 v3 牌表、鏡像成果只保留駕駛層。**
 
