@@ -15,7 +15,17 @@ Goal: build an `agent(obs_dict)` that wins the standard-format card battle. Two 
 - **Strategy report**: `pokemon-tcg-ai-battle-challenge-strategy` ($240K). Deadline **2026-09-13**.
 - 5 submissions/day; latest 2 are scored.
 
-## Current status (2026-07-16 — A/B 收斂=平手→Archaludon 敗局解剖→v4.2 fortress-gate 完成（已 commit，未提交 Kaggle）)
+## Current status (2026-07-17 — v4.2 SHIPPED（用戶「如擬」）＋天梯配對機制破解＋Luca 雙軌挖礦完成)
+
+- **7-17 SHIPPED 1/5（02:27 UTC，用戶「如擬」核准）：v4.2（#54773253，Archaludon fortress-gate）單獨提交 → 計分對 = v4.2 + v3 重跑（739.2 地板）。判讀時程：按新機制 24-48h 即有 ~100 場收斂讀數；忽略第 20-60 場過衝峰值。注意 7-17 早上計分對已翻成 v3 重跑 739.2 > v4.1 722.5（噪音帶內互換，平手判定不變）。**
+- **7-17 天梯配對機制破解（Episode API 實測，詳見 memory `ladder_matchmaking_mechanics.md`）：(1) 新提交前 6h 打 50-140 場（~23 場/hr），之後掉到 1-2 場/hr；老提交幾乎只在被新提交抽中時才有比賽（v4.1 第 61 場後 85% 對手 <24h 新提交）= v4 排賽枯竭之謎的答案。(2) K 值衰減：起始 600、第 1 場 ±60-120、前 20 場 ±40/場、60 場後 ±4/場 → 顯示分大半由第一天決定。(3) 前期勝率系統性偏高（我們三支皆上半 54-55% vs 下半 41-45%）= 爬坡池（前 20 場對手均 635）+ 高 K 過衝（三支都 780-890 峰值→收斂 725-770），不是官方放水。(4) 反查任意隊 submissionId：dump 找 episodeId → `ListEpisodes {"ids":[epId]}`。**
+- **7-17 新 #2 Luca 解剖（全新隊伍、生涯 2 提交）：兩支都頂級——第一支 Alakazam 收斂 1142（316 場 58%，同原型我們 725 = 駕駛差 ~400 Elo！）；第二支 Marnie's Grimmsnarl ex 7.7h 打 177 場 WR 69% 衝 1209 仍在爬（真分數非過衝）。他的 Grimm 對局表（107 場）：vs Alakazam 73%(40/55)、Kanga 69%、鏡像 64%、TR Mewtwo 80%；弱 Dragapult 33%；vs 我們口袋池的 Lucario/Archaludon = 0 場資料（未知數）。同作者牌組差只有 ~+60 Elo → 駕駛 >> 牌組。**
+- **7-17 雙軌挖礦完成（報告在 /tmp/lb_717/mine_{grimm,alakazam}_full.txt）：**
+  - **Grimm 軌**：`agents/grimmsnarl_luca`（Luca 現役 60 = 舊 grimmsnarl 表換 2 張：2×Handheld Fan→Pokégear+Tool Scrapper，check_agent PASS）；GenericPolicy 基準 vs 我們 alakazam = 24%（80 場）→ 駕駛空間 35pts。規則清單：開局 Impidimp 絕不 Munkidori；能量手貼給未進化體+Munkidori 1 顆（Punk Up 自帶 5 顆別重複貼 ex）；我們過度進化（EVOLVE Grimm +385）過度攻擊提早 END，他花在 ABILITY 448+抽搜鏈（Poké Pad/Lillie/Stretcher/Petrel）；Munkidori 指示物放到 Crustle（繞免 ex 特性）/對面 ex；Adrena-Brain 來源從 Munkidori 自己拿（順手自療 Freezing Shroud 自傷）；TO_HAND 抓能量/Froslass/Unfair Stamp 不囤線件（Spikemuth 每回合免費搜）。
+  - **Alakazam 軌**（182 勝局 11817 MAIN，1100+ 池的同原型示範，牌表 51/60 重疊）：我們過度發特性（ABILITY 2128 vs 941、ACTIVATE 253×NO→YES）；他 Dawn 301 次我們幾乎不打；板凳 Dunsparce>Abra；被 KO 推 Dunsparce/Dudunsparce 緩衝不推 Alakazam；gust 拉可 KO/引擎件（TR Articuno/Dunsparce/Fez）不拉大牆（TR Mewtwo ex）。⚠ 他跑 Dunsparce(65)/Dudunsparce(66) 舊印刷 ×4（我們 305×3），TO_HAND 狂抓 Dudunsparce 510 次可能是印刷特性差異，不可直接移植。
+- **下一步：(1) 明早查 v4.2 讀數（~100 場）；(2) Grimm 軌 = 寫 GrimmsnarlPolicy（BasePolicy 子類）實作規則清單，驗證目標 vs 我們 alakazam ≥55%；(3) Alakazam 軌 = 逐條移植 Luca 排序規則（每條過鏡像毒藥測試），並評估要不要跟牌表；(4) 每日 autopsy。**
+
+## Previous status (2026-07-16 — A/B 收斂=平手→Archaludon 敗局解剖→v4.2 fortress-gate 完成（已 commit，7-17 已提交 Kaggle）)
 
 - **7-16 A/B 收斂判定（各 ~100 場）：v4.1 = 724.6 / 99 場 / WR 48.5% vs v3 重跑 = 723.1 / 94 場 / WR 47.9% → 平手（+1.5）。7-15 的 +47 蒸發，兩支都從 ~780 峰值滑落收斂到 ~725 = 當前池真實力（池均值 745-755，比 7-08 的 770 池難 ~45 分）。機制讀數支持保留新牌表：鏡像 53% vs v3 的 40%（反鏡像包真有效）；Lucario 50% vs 53%（rush-gate 抵銷換牌代價）。隊伍 724.6/#1958/5100；top-1000=815.6、top-500=869.2。**
 - **7-16 新最大失血點 = Archaludon ex：池 17%（第二大）、v4.1 6/17=35%。21 場全 replay 解剖：不是僵持是被獎賽輾——對手 T2-3 Assemble Alloy 上 300HP 牆 + Metal Defender 220 每回合一擊帶走我們；敗場我們整場只打出 2-4 次攻擊。勝負分水嶺（我們自己的數據）：勝場打進 Archaludon ex 的 Powerful Hand 全 ≥300（一擊 KO）；敗場 15 發 60-260 小砲全被 Jumbo Ice Cream（治80×4）洗掉。支援者位分配：敗場 Boss 10+Xerosic 10/59=34% 沒抽牌；dump 勝方（13 場，9 勝）= Dawn/Hilda 20 : Xerosic 3 : Boss 1 —— 手牌×20=傷害，抽牌位就是砲彈。另抓到通用 bug：Boss gust-KO 判定用出 Boss 前的手牌（Boss 本身離手 = −20），手牌 8 拉 160HP Cinderace 打 140 白燒（敗場實錄 ×3）。**
