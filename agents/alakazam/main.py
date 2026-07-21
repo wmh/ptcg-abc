@@ -75,6 +75,10 @@ RUSH_LINE_IDS = {673, 674, 675, 676, 677, 678}
 # of draw. Dump winners (9 games): Dawn/Hilda 20 : Xerosic 3 : Boss 1 — the supporter
 # slot IS the ammunition (hand size = damage), so vs this line always draw first.
 FORTRESS_LINE_IDS = {169, 190}
+# Alakazam mirror (7-21: 25.8% of our ladder pool, our worst big matchup at 44%).
+# Detecting it on the opponent's board gates the mirror-only piloting rules mined from
+# 80 Elo>=1100 mirror WINS in the 7-20 dump (tools/divergence_decode --opp-archetype).
+MIRROR_LINE_IDS = {741, 742, 743, 245}
 LOW_DECK_COUNT = 6
 pre_turn = -1
 
@@ -376,6 +380,12 @@ class AlakazamPolicy:
         return any(p is not None and p.id in FORTRESS_LINE_IDS
                    for p in (self.opponent.active + self.opponent.bench))
 
+    def _opp_is_mirror(self):
+        """Opponent is playing the Alakazam line (the mirror) -> the mirror-only rules
+        mined from the 7-20 dump apply (see MIRROR_LINE_IDS)."""
+        return any(p is not None and p.id in MIRROR_LINE_IDS
+                   for p in (self.opponent.active + self.opponent.bench))
+
     def _opp_has_tera(self):
         """Opponent has a Tera Pokémon in play -> Nighttime Mine taxes their attacks."""
         for p in (self.opponent.active + self.opponent.bench):
@@ -511,6 +521,11 @@ class AlakazamPolicy:
             if prize_count(p) >= len(self.me.prize):
                 return 90000        # KO-ing this wins the game — gust it
             return 8000 + self._target_value(p)
+        # (7-21 TESTED & DROPPED: ranking a not-KO-able 2-prize Fezandipiti ex above a
+        # 1-prize KO target in the mirror — the mining's SWITCH signal (their 20x Fez vs
+        # our 12x Kadabra) — changed 0 of 2192 decisions across our 34 real ladder mirror
+        # games: we almost never reach that decision because our Boss only fires on an
+        # already-KO-able target. Dead code on the ladder, so not shipped.)
         return max(1, d)
 
     # — entry —
@@ -574,6 +589,38 @@ class AlakazamPolicy:
                     return False   # an Item is playable → not locked
         return True
 
+    def _needs_escape_fuel(self, p, is_active):
+        """A STRANDED Active: a non-attacker body with 0 energy, so it can neither attack
+        nor pay its 1-energy retreat, while a ready Alakazam waits on the bench.
+
+        7-21 mirror autopsy (34 real ladder games): in the 19 losses we sat through 37
+        turns with a non-attacker Active and made 0 attacks — 23 of them with a READY
+        Alakazam benched. The usual culprit is our own Fezandipiti ex after the opponent
+        Bosses it up (top mirror pilots' #1 gust target, 20x in the 7-20 mining): it needs
+        {C}{C}{C} to attack and 1 to retreat, so with 0 energy it locks us out for ~3
+        turns and then hands over 2 prizes. Attacks/game in those losses: us 2.9 vs the
+        winner's 4.5. One energy buys the retreat back.
+        """
+        # NOT vs the Lucario rush package: there the tempo cost of spending the turn's one
+        # attach on a retreat (instead of the Alakazam line) is worse than the stranding —
+        # measured 64% vs 72% @200g vs the lucario sample bot before this gate, while the
+        # same rule measured +11pts vs Archaludon (87% vs 76%) and +3 in the mirror.
+        if self._opp_is_rush():
+            return False
+        d = card_table.get(p.id)
+        if not (is_active and self._energy_count(p) == 0 and d is not None
+                and getattr(d, 'retreatCost', 9) <= 1
+                and self._bench_attacker_ready()):
+            return False
+        # ONLY a body whose cheapest attack costs 2+ is truly locked: with a 1-cost attack
+        # (Dunsparce's Trading Places, Abra's Teleport) the single attach already buys a
+        # normal attack/switch, and burning the turn's one attach on it instead of the
+        # Alakazam line measured -8pts (mirror A/B 84W/116L @200g when this rule covered
+        # every 1-cost body). Fezandipiti ex ({C}{C}{C}) is the locked case.
+        costs = [len(ATTACK_COST_ENERGIES[aid]) for aid in (d.attacks or [])
+                 if aid in ATTACK_COST_ENERGIES]
+        return bool(costs) and min(costs) >= 2
+
     def _bench_attacker_ready(self):
         """A benched Alakazam that already has the energy to attack (Powerful Hand
         needs 1 {P}). If one exists, we want IT active, not a Dunsparce/Dudunsparce."""
@@ -614,6 +661,11 @@ class AlakazamPolicy:
             # and leave "draw less" as a separate real-ladder A/B. Only the high-hand floor stays.
             if self.me.handCount >= 14 and self.me.deckCount <= 12:
                 return -1
+            # (7-21 TESTED & REVERTED: "in the mirror, skip Run Away Draw when the KO is
+            # already lethal" — the 7-20 mirror mining's biggest count divergence was our
+            # ABILITY 530 vs their 105. Mirror A/B vs frozen v4.2: 97W/103L = 48% @200g =
+            # no gain. Consistent with the standing lesson that MAIN ordering divergences
+            # are within-turn cascade noise; don't chase them again without a new theory.)
             # SEQUENCING (Majkel matchup mining 7-08, vs Grimmsnarl 1449 + Lucario 324 MAIN):
             # he fires Run Away Draw BEFORE the evolve/bench block (ABILITY his 157 vs our 43;
             # our EVOLVE:Dudunsparce 151 / EVOLVE:Kadabra 144 over-picks are the cascade of
@@ -777,6 +829,11 @@ class AlakazamPolicy:
             # other matchup stays bit-identical to v4.1.
             fortress = self._opp_is_fortress()
             ko = self._gust_ko_targets(hand_delta=-1 if fortress else 0)
+            # (7-21 TESTED & REVERTED: letting the mirror Boss fire for a not-yet-KO-able
+            # Fezandipiti ex converted 14 real-ladder draw turns (Dawn/Hilda) into Boss
+            # turns — mirror A/B 101W/99L = 50% @200g, and it contradicts the mining: the
+            # top pilots' MAIN picks never over-play Boss, they only CHOOSE Fez when they
+            # do gust. The surviving rule is target selection only, in _gust_value.)
             # If we can KO the Active threat this turn and it's worth at least as much as
             # any benched target, KO IT — don't gust a weaker Pokémon and leave the threat.
             if opp_active is not None and self._ko_active_reachable():
@@ -906,19 +963,26 @@ class AlakazamPolicy:
         p = get_card(self.obs, o.inPlayArea, o.inPlayIndex, self.my_index)
         if not isinstance(p, Pokemon):
             return 0
+        # Escape fuel is exempt from both energy-discipline guards below: it does NOT need
+        # to enable an attack, only the 1-energy retreat (a Bossed-up Fezandipiti ex needs
+        # {C}{C}{C} to attack, so "does this attach let it attack" is always False for it —
+        # that guard is exactly why we sat stranded for whole turns).
+        escape = self._needs_escape_fuel(p, o.inPlayArea == AreaType.ACTIVE)
         # GENERAL RULE (type-aware): attach only while the body still can't pay an attack;
         # once it CAN attack, hold the rest (fuels a backup AND +20 Powerful Hand per card).
-        if not self._should_fuel(p):
+        if not escape and not self._should_fuel(p):
             return -1
         # The source energy must actually enable an attack — a Colorless Enriching onto a
         # Psychic-needing Alakazam does NOT (the bug); hold it / pick a {P} source instead.
         src = get_card(self.obs, AreaType.HAND, o.index, self.my_index)
-        if not self._attach_helps(p, src):
+        if not escape and not self._attach_helps(p, src):
             return -1
         if p.id in ALAKAZAM_IDS:
             return 8000 + (200 if o.inPlayArea == AreaType.ACTIVE else 0)
         if p.id in (C.ABRA, C.KADABRA):
             return 1500           # pre-fuel the line (energy carries through evolution)
+        if escape:
+            return 7000
         return -1                 # non-attacker -> don't waste energy, hold it
 
     # — retreat —
@@ -1021,12 +1085,15 @@ class AlakazamPolicy:
         return 0
 
     def _score_attach_target(self, p, is_active):
-        if not self._should_fuel(p):
+        escape = self._needs_escape_fuel(p, is_active)
+        if not escape and not self._should_fuel(p):
             return -1             # already CAN attack (type-aware) -> don't over-fill
         if p.id in ALAKAZAM_IDS:
             return 8000 + (200 if is_active else 0)
         if p.id in (C.ABRA, C.KADABRA):
             return 1500
+        if escape:
+            return 7000
         return -1
 
     def _score_active_choice(self, o, card):
@@ -1096,6 +1163,10 @@ class AlakazamPolicy:
         if cid == C.PSYDUCK:
             return 90 if (n == 0 and self._opp_has_self_ko_ability()) else -1
         if cid == C.FEZANDIPITI:
+            # (7-21 TESTED & REVERTED: never benching Fez ex in the mirror — prevention
+            # instead of the escape-fuel cure, since it is their #1 Boss target — measured
+            # 97W/103L = 48% @200g against the escape-fuel build. The body and its Flip
+            # the Script draw are worth more than the hostage risk; keep benching it.)
             return 95 if n == 0 else -1
         return 100 - 20 * n
 

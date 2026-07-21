@@ -15,7 +15,16 @@ Goal: build an `agent(obs_dict)` that wins the standard-format card battle. Two 
 - **Strategy report**: `pokemon-tcg-ai-battle-challenge-strategy` ($240K). Deadline **2026-09-13**.
 - 5 submissions/day; latest 2 are scored.
 
-## Current status (2026-07-17 — v4.2 SHIPPED（用戶「如擬」）＋天梯配對機制破解＋Luca 雙軌挖礦完成)
+## Current status (2026-07-21 — v4.2 天梯 A/B 判定＝勝（765.2，首個收斂新高）＋鏡像解剖＋v4.3 escape-fuel 完成（未提交）)
+
+- **7-21 A/B 判定（兩支都收斂）：v4.2（#54773253）= 765.2 / 132 場 / WR 49.2% / 對手池均 775；v3 重跑（#54671182）= 689.2 / 193 場 / WR 47.2% / 對手池均 ~700-750 → +76 Elo，且 v4.2 打的是更硬的池。v4.2 從第 40 場起穩在 750-765 未再下滑；v3 重跑從 7-16 的 723 續跌到 689（v3 牌表真實力 ~690-720）。結論：Majkel-60 牌表 + rush-gate + fortress-gate 路線確認；765.2 是我們第一個「收斂」歷史最高分（860.3/852.5 都是 <100 場過衝）。隊伍 765.2 / #1524 / 5424；top-1000=808.8、top-500=864.7、top-100=985.6。頂端：#1 Oshbocker 1211.5、#3 Luca 1178.1（Grimmsnarl）、#5 Yushin、#8 Majkel。**
+- **7-21 逐對手體檢（132 場全 replay 分類）：鏡像 Alakazam 25.8%/44.1%（後半 35%）= 新最大失血；**Archaludon ex 21.2%/53.6%（後半 9/12=75%）= fortress-gate 天梯驗證成功（v4.1 是 35% → +19pts）**；Mega Lucario 11.4%/67%（rush-gate 持續有效，v4 曾 20%）；Dragapult 9.1%/58%；Crustle 5.3%/57%；Kangaskhan 5.3%/29%、Grimmsnarl 4.5%/33%、TR Mewtwo 3.8%/40%（樣本小）。鏡像敗場集中在對手 Elo 700-800 段（7/18）→ 駕駛問題非配對運氣。**
+- **7-21 鏡像解剖（34 場，詳見 memory `mirror_matchup_autopsy.md`）：勝負分水嶺是「出手次數」不是手牌大小 —— 勝場 5.9 攻擊/場、4.5 次 PH KO、攻擊時手牌 14.2；敗場 2.9 攻擊、1.9 KO、手牌 9.6，而同一批敗場的對手手牌也是 9.6 卻打了 4.5 次。空轉回合：敗場 4.7/場（對手 3.5），成因逐回合統計 = 非攻擊體當前鋒 37 回合（**Fezandipiti ex，其中 23 回合板凳上還有充好能的 Alakazam**）+ Dunsparce 21 + Abra 11 + 「Alakazam 前鋒 0 能量」8。Fez ex 攻擊要 {C}{C}{C}、撤退要 1，0 能量＝完全鎖死（敗場 11 次被打上前鋒 vs 勝場 2 次；7-20 挖礦顯示 Fez ex 正是頂級鏡像玩家的第一 gust 目標 20x）。**
+- **7-21 v4.3 = escape fuel（唯一通過測試的規則，未提交）：`_needs_escape_fuel()` — 前鋒 0 能量、撤退費 ≤1、最便宜攻擊要 2+ 能量（＝真的鎖死）、板凳有充好能的 Alakazam、且對手非 rush → 貼 1 顆能量（7000 分）解鎖下回合撤退。刻意繞過 `_should_fuel`/`_attach_helps` 兩道閘（Fez 貼 1 顆永遠「不能攻擊」＝正是它卡死的原因）。驗證：鏡像 A/B vs 凍結 v4.2 = 53%（兩次獨立 200 場皆 53%，共 400 場）；vs archaludon bot 87% vs 對照組 76%（+11）；vs lucario 加閘門後 bit-identical（15 場天梯 Lucario replay 895 決策 0 改動）；天梯 132 場 replay 共改 86/8071 決策（1.1%）全是 Fez/Shaymin 解鎖貼能；check_agent PASS。對照組凍結在 `agents/_ab_v42_frozen/`（untracked）。**
+- **7-21 三個被測掉的規則（毒藥偵測器五度立功）：(1) 鏡像不發 Run Away Draw（挖礦最大訊號 ABILITY 530 vs 105）→ 48%@200g 無效，再度印證 MAIN 排序分歧＝回合內 cascade 噪音；(2) 鏡像 Boss 拉未達 KO 的 Fez ex → 把 14 個天梯抽牌回合換成 Boss 回合、50%@200g，且違背挖礦（他們 MAIN 沒有多打 Boss，只是 gust 時選 Fez）；(3) 鏡像不上 Fez ex 板凳（預防取代治療）→ 48%@200g，Flip the Script 的身體價值 > 人質風險。另：escape fuel 覆蓋到 1 費攻擊體（Dunsparce/Abra）時 −8pts（84W/116L）→ 收窄到 2+ 費才過關。**
+- **下一步：(1) 提交 v4.3（計分對 = v4.3 + v4.2 → 地板 765，不再陪跑 v3）—— 等用戶指示；(2) 鏡像剩餘失血：Alakazam 前鋒 0 能量 8 回合 + Dunsparce/Abra 卡場 32 回合（牌組只有 7 張能量，能量調度是下一個題目）；(3) Kangaskhan 2/7、Grimmsnarl 2/6 樣本補到 20 場再決定要不要開閘門；(4) Grimm 軌（agents/grimmsnarl_luca）仍未動，等鏡像撞牆再評估；(5) 每日 autopsy。**
+
+## Previous status (2026-07-17 — v4.2 SHIPPED（用戶「如擬」）＋天梯配對機制破解＋Luca 雙軌挖礦完成)
 
 - **7-17 SHIPPED 1/5（02:27 UTC，用戶「如擬」核准）：v4.2（#54773253，Archaludon fortress-gate）單獨提交 → 計分對 = v4.2 + v3 重跑（739.2 地板）。判讀時程：按新機制 24-48h 即有 ~100 場收斂讀數；忽略第 20-60 場過衝峰值。注意 7-17 早上計分對已翻成 v3 重跑 739.2 > v4.1 722.5（噪音帶內互換，平手判定不變）。**
 - **7-17 天梯配對機制破解（Episode API 實測，詳見 memory `ladder_matchmaking_mechanics.md`）：(1) 新提交前 6h 打 50-140 場（~23 場/hr），之後掉到 1-2 場/hr；老提交幾乎只在被新提交抽中時才有比賽（v4.1 第 61 場後 85% 對手 <24h 新提交）= v4 排賽枯竭之謎的答案。(2) K 值衰減：起始 600、第 1 場 ±60-120、前 20 場 ±40/場、60 場後 ±4/場 → 顯示分大半由第一天決定。(3) 前期勝率系統性偏高（我們三支皆上半 54-55% vs 下半 41-45%）= 爬坡池（前 20 場對手均 635）+ 高 K 過衝（三支都 780-890 峰值→收斂 725-770），不是官方放水。(4) 反查任意隊 submissionId：dump 找 episodeId → `ListEpisodes {"ids":[epId]}`。**
